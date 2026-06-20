@@ -74,6 +74,8 @@ export default function StickyNoteComponent({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const isDraggingRef = useRef(false);
+  const hasMovedRef = useRef(false);
+  const startPosRef = useRef({ x: 0, y: 0 });
 
   const config = colorConfig[note.color];
 
@@ -88,8 +90,31 @@ export default function StickyNoteComponent({
     setEditContent(note.content);
   }, [note.content]);
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showColorPicker || showTagInput) {
+        if (noteRef.current && !noteRef.current.contains(e.target as Node)) {
+          setShowColorPicker(false);
+          setShowTagInput(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showColorPicker, showTagInput]);
+
+  const shouldIgnoreDrag = (target: HTMLElement): boolean => {
+    if (isEditing) return true;
+    if (target.closest('.note-controls')) return true;
+    if (target.closest('.note-popup')) return true;
+    if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.tagName === 'BUTTON') return true;
+    return false;
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.note-controls') || (e.target as HTMLElement).closest('textarea')) {
+    const target = e.target as HTMLElement;
+
+    if (shouldIgnoreDrag(target)) {
       return;
     }
 
@@ -104,31 +129,48 @@ export default function StickyNoteComponent({
       };
     }
 
-    isDraggingRef.current = true;
-    onDragStart(e, note.id);
+    startPosRef.current = { x: e.clientX, y: e.clientY };
+    isDraggingRef.current = false;
+    hasMovedRef.current = false;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDraggingRef.current) return;
+      const dx = Math.abs(e.clientX - startPosRef.current.x);
+      const dy = Math.abs(e.clientY - startPosRef.current.y);
 
-      const wallRect = noteRef.current?.parentElement?.getBoundingClientRect();
-      if (wallRect) {
-        const x = e.clientX - wallRect.left - dragOffset.current.x;
-        const y = e.clientY - wallRect.top - dragOffset.current.y;
-        onDrag(note.id, Math.max(0, x), Math.max(0, y));
+      if (!isDraggingRef.current && (dx > 3 || dy > 3)) {
+        isDraggingRef.current = true;
+        hasMovedRef.current = true;
+        onDragStart(e as unknown as React.MouseEvent, note.id);
+      }
+
+      if (isDraggingRef.current) {
+        const wallRect = noteRef.current?.parentElement?.getBoundingClientRect();
+        if (wallRect) {
+          const x = e.clientX - wallRect.left - dragOffset.current.x;
+          const y = e.clientY - wallRect.top - dragOffset.current.y;
+          onDrag(note.id, Math.max(0, x), Math.max(0, y));
+        }
       }
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      if (!isDraggingRef.current) return;
-      isDraggingRef.current = false;
-
-      const wallRect = noteRef.current?.parentElement?.getBoundingClientRect();
-      if (wallRect) {
-        const x = e.clientX - wallRect.left - dragOffset.current.x;
-        const y = e.clientY - wallRect.top - dragOffset.current.y;
-        onDragEnd(note.id, Math.max(0, x), Math.max(0, y));
+      if (isDraggingRef.current) {
+        const wallRect = noteRef.current?.parentElement?.getBoundingClientRect();
+        if (wallRect) {
+          const x = e.clientX - wallRect.left - dragOffset.current.x;
+          const y = e.clientY - wallRect.top - dragOffset.current.y;
+          onDragEnd(note.id, Math.max(0, x), Math.max(0, y));
+        }
+      } else if (!hasMovedRef.current) {
+        if (target.closest('.note-content-area') && !isEditing) {
+          setIsEditing(true);
+          setShowColorPicker(false);
+          setShowTagInput(false);
+        }
       }
 
+      isDraggingRef.current = false;
+      hasMovedRef.current = false;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -175,7 +217,7 @@ export default function StickyNoteComponent({
     <div
       ref={noteRef}
       className={cn(
-        'absolute cursor-grab select-none',
+        'absolute cursor-grab select-none group',
         'transition-transform duration-75',
         isDragging && 'cursor-grabbing z-50'
       )}
@@ -225,13 +267,15 @@ export default function StickyNoteComponent({
           }}
         />
 
-        <div className="absolute top-1 right-1 note-controls flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <div className="absolute top-1 right-1 note-controls flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
           <button
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               setShowColorPicker(!showColorPicker);
               setShowTagInput(false);
             }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1 rounded hover:bg-black/10 transition-colors"
             title="更改颜色"
           >
@@ -240,9 +284,11 @@ export default function StickyNoteComponent({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               setShowTagInput(!showTagInput);
               setShowColorPicker(false);
             }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1 rounded hover:bg-black/10 transition-colors"
             title="添加标签"
           >
@@ -251,10 +297,12 @@ export default function StickyNoteComponent({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               setIsEditing(true);
               setShowColorPicker(false);
               setShowTagInput(false);
             }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1 rounded hover:bg-black/10 transition-colors"
             title="编辑"
           >
@@ -263,8 +311,10 @@ export default function StickyNoteComponent({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onDelete(note.id);
             }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1 rounded hover:bg-red-500/30 transition-colors"
             title="删除"
           >
@@ -274,13 +324,15 @@ export default function StickyNoteComponent({
 
         {showColorPicker && (
           <div
-            className="absolute top-8 right-2 z-20 bg-white rounded-lg shadow-lg p-2 border border-gray-200 flex gap-1"
+            className="note-popup absolute top-8 right-2 z-30 bg-white rounded-lg shadow-lg p-2 border border-gray-200 flex gap-1"
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             {colorOptions.map((color) => (
               <button
                 key={color}
                 onClick={() => handleColorChange(color)}
+                onMouseDown={(e) => e.stopPropagation()}
                 className={cn(
                   'w-6 h-6 rounded-full border-2 transition-transform hover:scale-110',
                   colorConfig[color].bg,
@@ -294,8 +346,9 @@ export default function StickyNoteComponent({
 
         {showTagInput && (
           <div
-            className="absolute top-8 right-2 z-20 bg-white rounded-lg shadow-lg p-2 border border-gray-200 w-48"
+            className="note-popup absolute top-8 right-2 z-30 bg-white rounded-lg shadow-lg p-2 border border-gray-200 w-48"
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex gap-1 mb-2">
               <input
@@ -303,12 +356,14 @@ export default function StickyNoteComponent({
                 value={newTag}
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="输入标签..."
                 className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:border-gold-500"
                 autoFocus
               />
               <button
                 onClick={handleAddTag}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="px-2 py-1 bg-gold-500 text-white rounded text-xs hover:bg-gold-600"
               >
                 <Check className="w-3 h-3" />
@@ -324,6 +379,7 @@ export default function StickyNoteComponent({
                     {tag}
                     <button
                       onClick={() => handleRemoveTag(tag)}
+                      onMouseDown={(e) => e.stopPropagation()}
                       className="text-gray-400 hover:text-red-500"
                     >
                       <X className="w-2.5 h-2.5" />
@@ -335,7 +391,7 @@ export default function StickyNoteComponent({
           </div>
         )}
 
-        <div className="relative h-full p-4 pt-5 flex flex-col group">
+        <div className="note-content-area relative h-full p-4 pt-5 flex flex-col">
           {isEditing ? (
             <textarea
               ref={textareaRef}
@@ -343,18 +399,19 @@ export default function StickyNoteComponent({
               onChange={(e) => setEditContent(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={handleSaveContent}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
               className={cn(
-                'flex-1 w-full bg-transparent resize-none outline-none',
+                'flex-1 w-full bg-transparent resize-none outline-none cursor-text',
                 'font-serif text-sm leading-relaxed',
                 config.text
               )}
               style={{ fontFamily: '"Noto Serif SC", serif' }}
-              onClick={(e) => e.stopPropagation()}
             />
           ) : (
             <p
               className={cn(
-                'flex-1 text-sm leading-relaxed overflow-hidden',
+                'flex-1 text-sm leading-relaxed overflow-hidden cursor-text',
                 'whitespace-pre-wrap break-words',
                 config.text
               )}
