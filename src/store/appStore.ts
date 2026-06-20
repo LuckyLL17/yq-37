@@ -8,6 +8,7 @@ import type {
   PlotPoint,
   ConflictWarning,
   PdfExportConfig,
+  StickyNote,
 } from '@shared/types';
 import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
@@ -44,6 +45,7 @@ interface AppState {
   characters: Character[];
   plotPoints: PlotPoint[];
   conflictWarnings: ConflictWarning[];
+  stickyNotes: StickyNote[];
   isLoading: boolean;
   initialized: boolean;
 
@@ -75,6 +77,12 @@ interface AppState {
   deleteChapter: (chapterId: string) => Promise<void>;
   deleteCharacter: (characterId: string) => Promise<void>;
   deletePlotPoint: (plotPointId: string) => Promise<void>;
+  loadStickyNotes: (projectId: string) => Promise<void>;
+  createStickyNote: (projectId: string, data: Partial<StickyNote>) => Promise<StickyNote>;
+  updateStickyNote: (noteId: string, data: Partial<StickyNote>) => Promise<void>;
+  updateNotePosition: (noteId: string, data: { positionX: number; positionY: number; zIndex?: number; rotation?: number }) => Promise<void>;
+  deleteStickyNote: (noteId: string) => Promise<void>;
+  reorderNotes: (projectId: string, noteIds: string[]) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -94,6 +102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   characters: [],
   plotPoints: [],
   conflictWarnings: [],
+  stickyNotes: [],
   isLoading: false,
   initialized: false,
 
@@ -101,13 +110,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().initialized) return;
     set({ isLoading: true });
     try {
-      const [users, projects, chapters, characters, plotPoints, conflictWarnings] = await Promise.all([
+      const projectsList = await api.projects.list();
+      const [users, projects, chapters, characters, plotPoints, stickyNotes] = await Promise.all([
         api.users.list(),
-        api.projects.list(),
-        Promise.all((await api.projects.list()).map(p => api.chapters.list(p.id))).then(arrs => arrs.flat()),
-        Promise.all((await api.projects.list()).map(p => api.characters.list(p.id))).then(arrs => arrs.flat()),
-        Promise.all((await api.projects.list()).map(p => api.plot.list(p.id))).then(arrs => arrs.flat()),
-        Promise.resolve([] as any[]),
+        projectsList,
+        Promise.all(projectsList.map((p: any) => api.chapters.list(p.id))).then(arrs => arrs.flat()),
+        Promise.all(projectsList.map((p: any) => api.characters.list(p.id))).then(arrs => arrs.flat()),
+        Promise.all(projectsList.map((p: any) => api.plot.list(p.id))).then(arrs => arrs.flat()),
+        Promise.all(projectsList.map((p: any) => api.notes.list(p.id))).then(arrs => arrs.flat()),
       ]);
 
       const allChapterIds = chapters.map((c: any) => c.id);
@@ -122,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         chapterVersions: reviveDates(versions),
         characters: reviveDates(characters),
         plotPoints: reviveDates(plotPoints),
+        stickyNotes: reviveDates(stickyNotes),
         conflictWarnings: [],
         currentUser: reviveDates(users[0]) || get().currentUser,
         initialized: true,
@@ -541,6 +552,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       chapters: state.chapters.filter(c => c.projectId !== projectId),
       characters: state.characters.filter(c => c.projectId !== projectId),
       plotPoints: state.plotPoints.filter(p => p.projectId !== projectId),
+      stickyNotes: state.stickyNotes.filter(n => n.projectId !== projectId),
       currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
     }));
   },
@@ -566,5 +578,70 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => ({
       plotPoints: state.plotPoints.filter(p => p.id !== plotPointId),
     }));
+  },
+
+  loadStickyNotes: async (projectId: string) => {
+    try {
+      const notes = await api.notes.list(projectId);
+      set({ stickyNotes: reviveDates(notes) });
+    } catch (e) {
+      console.error('Failed to load sticky notes:', e);
+    }
+  },
+
+  createStickyNote: async (projectId: string, data: Partial<StickyNote>): Promise<StickyNote> => {
+    const note = reviveDates(await api.notes.create(projectId, data));
+    set(state => ({ stickyNotes: [...state.stickyNotes, note] }));
+    return note;
+  },
+
+  updateStickyNote: async (noteId: string, data: Partial<StickyNote>) => {
+    try {
+      const updated = reviveDates(await api.notes.update(noteId, data));
+      set(state => ({
+        stickyNotes: state.stickyNotes.map(n => n.id === noteId ? updated : n),
+      }));
+    } catch (e) {
+      console.error('Failed to update note:', e);
+    }
+  },
+
+  updateNotePosition: async (noteId: string, data: { positionX: number; positionY: number; zIndex?: number; rotation?: number }) => {
+    try {
+      const updated = reviveDates(await api.notes.updatePosition(noteId, data));
+      set(state => ({
+        stickyNotes: state.stickyNotes.map(n => n.id === noteId ? updated : n),
+      }));
+    } catch (e) {
+      console.error('Failed to update note position:', e);
+    }
+  },
+
+  deleteStickyNote: async (noteId: string) => {
+    try {
+      await api.notes.delete(noteId);
+      set(state => ({
+        stickyNotes: state.stickyNotes.filter(n => n.id !== noteId),
+      }));
+    } catch (e) {
+      console.error('Failed to delete note:', e);
+    }
+  },
+
+  reorderNotes: async (projectId: string, noteIds: string[]) => {
+    try {
+      await api.notes.reorder(projectId, noteIds);
+      set(state => ({
+        stickyNotes: state.stickyNotes.map(n => {
+          const idx = noteIds.indexOf(n.id);
+          if (idx !== -1) {
+            return { ...n, zIndex: idx + 1 };
+          }
+          return n;
+        }),
+      }));
+    } catch (e) {
+      console.error('Failed to reorder notes:', e);
+    }
   },
 }));

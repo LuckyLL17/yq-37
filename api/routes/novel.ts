@@ -8,8 +8,9 @@ import {
   mockCharacters,
   mockPlotPoints,
   mockConflictWarnings,
+  mockStickyNotes,
 } from '../data/mockData.js';
-import type { PdfExportConfig, ConflictWarning } from '../../shared/types.js';
+import type { PdfExportConfig, ConflictWarning, StickyNote } from '../../shared/types.js';
 import { diff_match_patch } from 'diff-match-patch';
 import { jsPDF } from 'jspdf';
 
@@ -619,6 +620,89 @@ router.post('/export/pdf', async (req: Request, res: Response) => {
       totalWords: selectedChapters.reduce((sum, c) => sum + c.wordCount, 0),
     });
   }
+});
+
+// ==================== Sticky Notes CRUD ====================
+
+router.get('/projects/:id/notes', (req: Request, res: Response) => {
+  const notes = mockStickyNotes.filter(n => n.projectId === req.params.id);
+  res.json(notes);
+});
+
+router.post('/projects/:id/notes', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const project = mockProjects.find(p => p.id === projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const maxZ = mockStickyNotes.filter(n => n.projectId === projectId).length;
+  const newNote: StickyNote = {
+    id: `note-${Date.now()}`,
+    projectId,
+    content: req.body.content || '',
+    color: req.body.color || 'yellow',
+    tags: req.body.tags || [],
+    positionX: req.body.positionX ?? 100 + Math.random() * 200,
+    positionY: req.body.positionY ?? 100 + Math.random() * 200,
+    zIndex: maxZ + 1,
+    width: req.body.width || 240,
+    height: req.body.height || 160,
+    rotation: req.body.rotation ?? (Math.random() - 0.5) * 6,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  mockStickyNotes.push(newNote);
+  res.status(201).json(newNote);
+});
+
+router.put('/notes/:id', (req: Request, res: Response) => {
+  const index = mockStickyNotes.findIndex(n => n.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Note not found' });
+
+  mockStickyNotes[index] = {
+    ...mockStickyNotes[index],
+    ...req.body,
+    updatedAt: new Date(),
+  };
+  res.json(mockStickyNotes[index]);
+});
+
+router.put('/notes/:id/position', (req: Request, res: Response) => {
+  const index = mockStickyNotes.findIndex(n => n.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Note not found' });
+
+  const { positionX, positionY, zIndex, rotation } = req.body;
+  mockStickyNotes[index] = {
+    ...mockStickyNotes[index],
+    positionX: positionX ?? mockStickyNotes[index].positionX,
+    positionY: positionY ?? mockStickyNotes[index].positionY,
+    zIndex: zIndex ?? mockStickyNotes[index].zIndex,
+    rotation: rotation ?? mockStickyNotes[index].rotation,
+    updatedAt: new Date(),
+  };
+  res.json(mockStickyNotes[index]);
+});
+
+router.delete('/notes/:id', (req: Request, res: Response) => {
+  const index = mockStickyNotes.findIndex(n => n.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Note not found' });
+  mockStickyNotes.splice(index, 1);
+  res.json({ success: true });
+});
+
+router.put('/projects/:id/notes/reorder', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const { noteIds } = req.body;
+
+  const projectNotes = mockStickyNotes.filter(n => n.projectId === projectId);
+  noteIds.forEach((noteId: string, index: number) => {
+    const note = projectNotes.find(n => n.id === noteId);
+    if (note) {
+      note.zIndex = index + 1;
+      note.updatedAt = new Date();
+    }
+  });
+
+  res.json({ success: true });
 });
 
 export default router;

@@ -95,4 +95,18 @@ export const api = {
   export: {
     pdf: (config: any) => request<any>('/export/pdf', { method: 'POST', body: JSON.stringify(config) }),
   },
+
+  notes: {
+    list: (projectId: string) => request<any[]>(`/projects/${projectId}/notes`),
+    create: (projectId: string, data: Partial<any>) =>
+      request<any>(`/projects/${projectId}/notes`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<any>) =>
+      request<any>(`/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    updatePosition: (id: string, data: { positionX?: number; positionY?: number; zIndex?: number; rotation?: number }) =>
+      request<any>(`/notes/${id}/position`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/notes/${id}`, { method: 'DELETE' }),
+    reorder: (projectId: string, noteIds: string[]) =>
+      request<any>(`/projects/${projectId}/notes/reorder`, { method: 'PUT', body: JSON.stringify({ noteIds }) }),
+  },
 };

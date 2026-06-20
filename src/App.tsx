@@ -7,6 +7,7 @@ import VersionHistory from "@/pages/VersionHistory";
 import CharacterEncyclopedia from "@/pages/CharacterEncyclopedia";
 import PlotManager from "@/pages/PlotManager";
 import ExportCenter from "@/pages/ExportCenter";
+import InspirationWall from "@/pages/InspirationWall";
 import ProjectLayout from "@/components/ProjectLayout";
 import { useAppStore } from "@/store/appStore";
 
@@ -93,6 +94,14 @@ export default function App() {
             element={
               <ProjectLayout>
                 <ExportCenter />
+              </ProjectLayout>
+            }
+          />
+          <Route
+            path="/projects/:projectId/inspiration"
+            element={
+              <ProjectLayout>
+                <InspirationWall />
               </ProjectLayout>
             }
           />

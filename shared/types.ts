@@ -151,3 +151,28 @@ export interface PdfExportConfig {
     right: number;
   };
 }
+
+export type StickyNoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange' | 'purple';
+
+export interface StickyNote {
+  id: string;
+  projectId: string;
+  content: string;
+  color: StickyNoteColor;
+  tags: string[];
+  positionX: number;
+  positionY: number;
+  zIndex: number;
+  width: number;
+  height: number;
+  rotation: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InspirationWall {
+  id: string;
+  projectId: string;
+  notes: StickyNote[];
+  background: 'cork' | 'paper' | 'wood';
+}
