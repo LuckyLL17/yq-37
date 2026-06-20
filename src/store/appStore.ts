@@ -69,6 +69,184 @@ const reviver = (_key: string, value: unknown): unknown => {
   return value;
 };
 
+interface PersistedShape {
+  projects: unknown[];
+  chapters: unknown[];
+  chapterVersions: unknown[];
+  characters: unknown[];
+  plotPoints: unknown[];
+  conflictWarnings: unknown[];
+}
+
+const flattenForStorage = (state: AppState): PersistedShape => {
+  const userMap = new Map(state.users.map(u => [u.id, u]));
+
+  const projects = state.projects.map(p => ({
+    ...p,
+    members: p.members.map(m => ({
+      userId: m.userId,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    })),
+  }));
+
+  const chapters = state.chapters.map(c => {
+    const copy: any = { ...c };
+    if (copy.lock) {
+      copy.lock = {
+        userId: copy.lock.userId,
+        lockedAt: copy.lock.lockedAt,
+        expiresAt: copy.lock.expiresAt,
+      };
+    }
+    return copy;
+  });
+
+  const chapterVersions = state.chapterVersions.map(v => ({
+    ...v,
+    author: undefined,
+  }));
+
+  const characters = state.characters.map(c => ({
+    ...c,
+    relationships: c.relationships.map(r => ({
+      id: r.id,
+      characterId: r.characterId,
+      targetId: r.targetId,
+      type: r.type,
+      description: r.description,
+    })),
+    appearances: c.appearances.map(a => ({
+      id: a.id,
+      characterId: a.characterId,
+      chapterId: a.chapterId,
+      context: a.context,
+      createdAt: a.createdAt,
+    })),
+  }));
+
+  const plotPoints = state.plotPoints.map(p => ({
+    ...p,
+    hints: p.hints.map(h => ({
+      id: h.id,
+      plotPointId: h.plotPointId,
+      chapterId: h.chapterId,
+      hintText: h.hintText,
+      locationDescription: h.locationDescription,
+      createdAt: h.createdAt,
+    })),
+  }));
+
+  const conflictWarnings = state.conflictWarnings.map(w => ({
+    ...w,
+    character: undefined,
+    plotPoint: undefined,
+  }));
+
+  return { projects, chapters, chapterVersions, characters, plotPoints, conflictWarnings };
+};
+
+const unflattenFromStorage = (raw: PersistedShape, users: User[]): AppState => {
+  const userMap = new Map(users.map(u => [u.id, u]));
+  const fallbackUser: User = {
+    id: 'unknown',
+    username: '未知用户',
+    email: 'unknown@example.com',
+    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=unknown',
+    createdAt: new Date(),
+  };
+  const getUser = (id?: string) => (id && userMap.get(id)) || users[0] || fallbackUser;
+
+  const chapters = raw.chapters.map((c: any) => ({
+    ...c,
+    lock: c.lock
+      ? { ...c.lock, user: getUser(c.lock.userId) }
+      : undefined,
+  }));
+  const chapterMap = new Map((chapters as Chapter[]).map(c => [c.id, c]));
+
+  const characters = raw.characters.map((c: any) => ({
+    ...c,
+  }));
+  const characterMap = new Map((characters as Character[]).map(c => [c.id, c]));
+
+  characters.forEach((c: any) => {
+    c.relationships = (c.relationships || []).map((r: any) => ({
+      ...r,
+      target: characterMap.get(r.targetId) || {
+        id: r.targetId,
+        name: '未知人物',
+        projectId: c.projectId,
+        description: '',
+        traits: {},
+        relationships: [],
+        appearances: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }));
+    c.appearances = (c.appearances || []).map((a: any) => ({
+      ...a,
+      chapter: chapterMap.get(a.chapterId) || {
+        id: a.chapterId,
+        projectId: c.projectId,
+        title: '未知章节',
+        content: '',
+        order: 0,
+        wordCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }));
+  });
+
+  const plotPoints = raw.plotPoints.map((p: any) => ({
+    ...p,
+    hints: (p.hints || []).map((h: any) => ({
+      ...h,
+      chapter: h.chapterId ? chapterMap.get(h.chapterId) || {
+        id: h.chapterId,
+        projectId: p.projectId,
+        title: '未知章节',
+        content: '',
+        order: 0,
+        wordCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } : undefined,
+    })),
+  }));
+  const plotMap = new Map((plotPoints as PlotPoint[]).map(p => [p.id, p]));
+
+  const projects = raw.projects.map((p: any) => ({
+    ...p,
+    members: p.members.map((m: any) => ({
+      ...m,
+      user: getUser(m.userId),
+    })),
+  }));
+
+  const chapterVersions = raw.chapterVersions.map((v: any) => ({
+    ...v,
+    author: getUser(v.authorId),
+  }));
+
+  const conflictWarnings = raw.conflictWarnings.map((w: any) => ({
+    ...w,
+    character: w.characterId ? characterMap.get(w.characterId) : undefined,
+    plotPoint: w.plotPointId ? plotMap.get(w.plotPointId) : undefined,
+  }));
+
+  return {
+    projects,
+    chapters,
+    chapterVersions,
+    characters,
+    plotPoints,
+    conflictWarnings,
+  } as unknown as AppState;
+};
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -765,16 +943,66 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'novel-studio-storage',
-      storage: createJSONStorage(() => localStorage, { reviver }),
-      partialize: (state) => ({
+      version: 2,
+      migrate: (persistedState: any, version) => {
+        if (version < 2) {
+          return null as any;
+        }
+        return persistedState;
+      },
+      storage: {
+        getItem: (name) => {
+          const str = localStorage.getItem(name);
+          if (!str) return null;
+          try {
+            const parsed = JSON.parse(str, reviver);
+            const usersStr = localStorage.getItem(`${name}-users`);
+            const users = usersStr ? JSON.parse(usersStr, reviver) : mockUsers;
+            const restored = unflattenFromStorage(parsed.state, users);
+            return { state: restored, version: parsed.version };
+          } catch (e) {
+            console.warn('Failed to restore persisted state:', e);
+            return null;
+          }
+        },
+        setItem: (name, value) => {
+          try {
+            const flat = flattenForStorage(value.state as AppState);
+            const stateJson = JSON.stringify({ state: flat, version: value.version });
+            localStorage.setItem(name, stateJson);
+            localStorage.setItem(`${name}-users`, JSON.stringify(
+              (value.state as AppState).users
+            ));
+          } catch (e) {
+            console.warn('Failed to persist state:', e);
+          }
+        },
+        removeItem: (name) => {
+          localStorage.removeItem(name);
+          localStorage.removeItem(`${name}-users`);
+        },
+      },
+      partialize: (state: AppState) => ({
         projects: state.projects,
         chapters: state.chapters,
         chapterVersions: state.chapterVersions,
         characters: state.characters,
         plotPoints: state.plotPoints,
         conflictWarnings: state.conflictWarnings,
-      }),
-      version: 1,
+        users: state.users,
+      }) as any,
+      merge: (persistedState, currentState) => {
+        const p = persistedState as Partial<AppState>;
+        return {
+          ...currentState,
+          projects: p.projects || currentState.projects,
+          chapters: p.chapters || currentState.chapters,
+          chapterVersions: p.chapterVersions || currentState.chapterVersions,
+          characters: p.characters || currentState.characters,
+          plotPoints: p.plotPoints || currentState.plotPoints,
+          conflictWarnings: p.conflictWarnings || currentState.conflictWarnings,
+        };
+      },
     }
   )
 );
