@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   User,
   Project,
@@ -61,18 +62,27 @@ interface AppState {
 
 const dmp = new diff_match_patch();
 
-export const useAppStore = create<AppState>((set, get) => ({
-  currentUser: mockCurrentUser,
-  users: mockUsers,
-  projects: mockProjects,
-  currentProject: null,
-  chapters: mockChapters,
-  currentChapter: null,
-  chapterVersions: mockChapterVersions,
-  characters: mockCharacters,
-  plotPoints: mockPlotPoints,
-  conflictWarnings: mockConflictWarnings,
-  isLoading: false,
+const reviver = (_key: string, value: unknown): unknown => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+    return new Date(value);
+  }
+  return value;
+};
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      currentUser: mockCurrentUser,
+      users: mockUsers,
+      projects: mockProjects,
+      currentProject: null,
+      chapters: mockChapters,
+      currentChapter: null,
+      chapterVersions: mockChapterVersions,
+      characters: mockCharacters,
+      plotPoints: mockPlotPoints,
+      conflictWarnings: mockConflictWarnings,
+      isLoading: false,
 
   setCurrentProject: (projectId: string) => {
     const project = get().projects.find(p => p.id === projectId) || null;
@@ -107,10 +117,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
 
     if (prevChapter && prevChapter.content !== content) {
-      const diffChars = Math.abs(content.replace(/\s/g, '').length - prevChapter.content.replace(/\s/g, '').length);
-      if (diffChars >= 50) {
-        const autoSummary = diffChars > 0
-          ? `自动保存（${diffChars > 0 ? '+' : ''}${diffChars}字）`
+      const dmp = new diff_match_patch();
+      const diffs = dmp.diff_main(prevChapter.content, content);
+      let changedChars = 0;
+      diffs.forEach(d => {
+        if (d[0] !== 0) changedChars += d[1].replace(/\s/g, '').length;
+      });
+
+      if (changedChars >= 10) {
+        const prevLen = prevChapter.content.replace(/\s/g, '').length;
+        const newLen = wordCount;
+        const delta = newLen - prevLen;
+        const autoSummary = changedChars > 0
+          ? `自动保存（${delta >= 0 ? '+' : ''}${delta}字）`
           : '自动保存';
         const newVersion: ChapterVersion = {
           id: `version-${Date.now()}`,
@@ -436,12 +455,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const contentWidth = pageWidth - margin.left - margin.right;
       const contentHeight = pageHeight - margin.top - margin.bottom;
 
+      const mmToPx = 3.7795275591;
+
       const renderHtmlToCanvas = async (htmlContent: string, widthPx: number): Promise<HTMLCanvasElement> => {
         const container = document.createElement('div');
         container.style.width = `${widthPx}px`;
         container.style.padding = '0';
         container.style.margin = '0';
-        container.style.fontFamily = '"Noto Serif SC", "SimSun", serif';
+        container.style.fontFamily = '"Noto Serif SC", "SimSun", "Source Han Serif CN", serif';
         container.style.fontSize = `${config.fontSize}px`;
         container.style.lineHeight = `${config.lineHeight}`;
         container.style.color = '#000000';
@@ -451,6 +472,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         container.style.top = '0';
         container.innerHTML = htmlContent;
         document.body.appendChild(container);
+
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         const canvas = await html2canvas(container, {
           scale: 2,
@@ -463,44 +486,80 @@ export const useAppStore = create<AppState>((set, get) => ({
         return canvas;
       };
 
+      const drawPageNumber = (num: number) => {
+        if (!config.includePageNumbers) return;
+        const numCanvas = document.createElement('canvas');
+        numCanvas.width = 400;
+        numCanvas.height = 40;
+        const numCtx = numCanvas.getContext('2d');
+        if (numCtx) {
+          numCtx.fillStyle = '#ffffff';
+          numCtx.fillRect(0, 0, numCanvas.width, numCanvas.height);
+          numCtx.fillStyle = '#888888';
+          numCtx.font = '16px "Noto Serif SC", "SimSun", serif';
+          numCtx.textAlign = 'center';
+          numCtx.textBaseline = 'middle';
+          numCtx.fillText(`- ${num} -`, numCanvas.width / 2, numCanvas.height / 2);
+        }
+        const numImgData = numCanvas.toDataURL('image/png');
+        const numImgWidth = 30;
+        const numImgHeight = 3;
+        doc.addImage(numImgData, 'PNG', (pageWidth - numImgWidth) / 2, pageHeight - margin.bottom / 2 - numImgHeight / 2, numImgWidth, numImgHeight);
+      };
+
+      let globalPageNum = 0;
+
+      const nextPage = () => {
+        doc.addPage();
+        globalPageNum++;
+      };
+
       if (config.includeCover) {
+        globalPageNum++;
+        const coverTitleSize = Math.max(24, config.fontSize + 20);
+        const coverAuthorSize = Math.max(14, config.fontSize + 4);
         const coverHtml = `
-          <div style="width:100%;height:${(pageHeight / 0.264583)}px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:'Noto Serif SC',serif;">
-            <h1 style="font-size:32px;font-weight:bold;text-align:center;margin-bottom:16px;color:white;">${config.title}</h1>
-            ${config.author ? `<p style="font-size:16px;color:#d4af37;">${config.author}</p>` : ''}
+          <div style="width:100%;height:${(pageHeight * mmToPx)}px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:'Noto Serif SC','SimSun',serif;">
+            <h1 style="font-size:${coverTitleSize}px;font-weight:bold;text-align:center;margin-bottom:16px;color:white;padding:0 40px;">${config.title}</h1>
+            ${config.author ? `<p style="font-size:${coverAuthorSize}px;color:#d4af37;">${config.author}</p>` : ''}
             <div style="width:60px;height:2px;background:#d4af37;margin-top:32px;"></div>
           </div>
         `;
-        const canvas = await renderHtmlToCanvas(coverHtml, Math.round(pageWidth / 0.264583));
+        const canvas = await renderHtmlToCanvas(coverHtml, Math.round(pageWidth * mmToPx));
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
-        doc.addPage();
+        drawPageNumber(globalPageNum);
+        nextPage();
       }
 
       if (config.includeToc) {
+        globalPageNum++;
+        const tocTitleSize = Math.max(16, config.fontSize + 6);
         const tocItems = config.chapterIds.map((chapterId, index) => {
           const chapter = get().chapters.find(c => c.id === chapterId);
           return chapter
-            ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dotted #ccc;">
+            ? `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dotted #ccc;font-size:${config.fontSize}px;">
                 <span>${index + 1}. ${chapter.title}</span>
-                <span>${index + 2}</span>
+                <span>${index + 2 + (config.includeCover ? 1 : 0)}</span>
               </div>`
             : '';
         }).join('');
 
         const tocHtml = `
-          <div style="padding:${margin.top / 0.264583}px ${margin.right / 0.264583}px;">
-            <h2 style="font-size:20px;font-weight:bold;color:#1e3a5f;margin-bottom:16px;">目录</h2>
+          <div style="padding:0;">
+            <h2 style="font-size:${tocTitleSize}px;font-weight:bold;color:#1e3a5f;margin-bottom:16px;">目录</h2>
             ${tocItems}
           </div>
         `;
-        const canvas = await renderHtmlToCanvas(tocHtml, Math.round(contentWidth / 0.264583));
+        const canvas = await renderHtmlToCanvas(tocHtml, Math.round(contentWidth * mmToPx));
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentWidth, contentHeight);
-        doc.addPage();
+        const imgHeight = Math.min((canvas.height * contentWidth) / canvas.width, contentHeight);
+        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentWidth, imgHeight);
+        drawPageNumber(globalPageNum);
+        nextPage();
       }
 
-      let pageNum = (config.includeCover ? 1 : 0) + (config.includeToc ? 1 : 0);
+      const chapterTitleSize = Math.max(14, config.fontSize + 4);
 
       for (let i = 0; i < config.chapterIds.length; i++) {
         const chapterId = config.chapterIds[i];
@@ -510,13 +569,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         const chapterContent = chapter.content.replace(/\n/g, '<br/>');
         const chapterHtml = `
           <div style="padding:0;">
-            <h2 style="font-size:18px;font-weight:bold;color:#1e3a5f;margin-bottom:8px;">${chapter.title}</h2>
+            <h2 style="font-size:${chapterTitleSize}px;font-weight:bold;color:#1e3a5f;margin-bottom:8px;">${chapter.title}</h2>
             <div style="width:40px;height:2px;background:#d4af37;margin-bottom:16px;"></div>
             <div style="font-size:${config.fontSize}px;line-height:${config.lineHeight};">${chapterContent}</div>
           </div>
         `;
 
-        const widthPx = Math.round(contentWidth / 0.264583);
+        const widthPx = Math.round(contentWidth * mmToPx);
         const canvas = await renderHtmlToCanvas(chapterHtml, widthPx);
 
         const imgWidth = contentWidth;
@@ -524,12 +583,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         const pageContentHeight = contentHeight;
 
         let yOffset = 0;
+        let firstSliceOfChapter = true;
         while (yOffset < imgHeight) {
-          if (yOffset > 0 || i > 0 || config.includeToc || config.includeCover) {
-            if (yOffset > 0) {
-              doc.addPage();
+          if (!(i === 0 && !config.includeCover && !config.includeToc && firstSliceOfChapter)) {
+            if (!firstSliceOfChapter) {
+              nextPage();
+            } else {
+              globalPageNum++;
             }
-            pageNum++;
+          } else {
+            globalPageNum++;
           }
 
           const sliceHeight = Math.min(pageContentHeight, imgHeight - yOffset);
@@ -538,9 +601,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
           const pageCanvas = document.createElement('canvas');
           pageCanvas.width = canvas.width;
-          pageCanvas.height = sourceHeight;
+          pageCanvas.height = Math.max(1, sourceHeight);
           const ctx = pageCanvas.getContext('2d');
           if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
             ctx.drawImage(
               canvas,
               0, sourceY, canvas.width, sourceHeight,
@@ -551,13 +616,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.92);
           doc.addImage(pageImgData, 'JPEG', margin.left, margin.top, imgWidth, sliceHeight);
 
-          if (config.includePageNumbers) {
-            doc.setFontSize(10);
-            doc.setTextColor(128, 128, 128);
-            doc.text(`- ${pageNum} -`, pageWidth / 2, pageHeight - margin.bottom / 2, { align: 'center' });
-          }
-
+          drawPageNumber(globalPageNum);
           yOffset += pageContentHeight;
+          firstSliceOfChapter = false;
         }
       }
 
@@ -701,4 +762,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
   },
-}));
+    }),
+    {
+      name: 'novel-studio-storage',
+      storage: createJSONStorage(() => localStorage, { reviver }),
+      partialize: (state) => ({
+        projects: state.projects,
+        chapters: state.chapters,
+        chapterVersions: state.chapterVersions,
+        characters: state.characters,
+        plotPoints: state.plotPoints,
+        conflictWarnings: state.conflictWarnings,
+      }),
+      version: 1,
+    }
+  )
+);
