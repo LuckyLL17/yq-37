@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   BookOpen,
@@ -22,10 +23,21 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentProject, currentUser, setCurrentProject } = useAppStore();
+  const { currentProject, currentUser, setCurrentProject, users } = useAppStore();
+
+  const getMemberUser = (member: any) => {
+    if (member.user && typeof member.user === 'object' && !member.user._ref) return member.user;
+    const userId = member.user?.id || member.userId;
+    return users.find(u => u.id === userId) || { username: '未知', avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=unknown', id: userId || 'unknown' };
+  };
+
+  useEffect(() => {
+    if (projectId) {
+      setCurrentProject(projectId);
+    }
+  }, [projectId, setCurrentProject]);
 
   if (!currentProject || currentProject.id !== projectId) {
-    setCurrentProject(projectId!);
     return <div className="flex items-center justify-center h-screen">加载中...</div>;
   }
 
@@ -59,22 +71,25 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                {currentProject.members.slice(0, 3).map(member => (
+                {currentProject.members.slice(0, 3).map(member => {
+                  const u = getMemberUser(member);
+                  return (
                   <div
                     key={member.userId}
                     className="group relative"
-                    title={`${member.user.username} (${member.role === 'creator' ? '创建者' : member.role === 'author' ? '作者' : '浏览者'})`}
+                    title={`${u.username} (${member.role === 'creator' ? '创建者' : member.role === 'author' ? '作者' : '浏览者'})`}
                   >
                     <img
-                      src={member.user.avatarUrl}
-                      alt={member.user.username}
+                      src={u.avatarUrl}
+                      alt={u.username}
                       className="w-8 h-8 rounded-full border-2 border-ink-700"
                     />
                     {member.role === 'creator' && (
                       <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gold-500 border border-ink-800" />
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {currentProject.members.length > 3 && (
                   <div className="w-8 h-8 rounded-full bg-ink-700 flex items-center justify-center text-xs text-ink-300 border-2 border-ink-700">
                     +{currentProject.members.length - 3}

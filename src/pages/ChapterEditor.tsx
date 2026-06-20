@@ -61,8 +61,9 @@ export default function ChapterEditor() {
   useEffect(() => {
     if (chapterId) {
       setCurrentChapter(chapterId);
+    } else {
+      setCurrentChapter(null);
     }
-    return () => setCurrentChapter(null);
   }, [chapterId, setCurrentChapter]);
 
   useEffect(() => {

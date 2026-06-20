@@ -13,7 +13,7 @@ import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
 
 export default function ProjectsList() {
-  const { projects, currentUser, createProject } = useAppStore();
+  const { projects, currentUser, createProject, users } = useAppStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProject, setNewProject] = useState({ title: '', description: '' });
 
@@ -22,6 +22,12 @@ export default function ProjectsList() {
     await createProject(newProject.title, newProject.description);
     setShowCreateModal(false);
     setNewProject({ title: '', description: '' });
+  };
+
+  const getMemberUser = (member: any) => {
+    if (member.user && typeof member.user === 'object' && !member.user._ref) return member.user;
+    const userId = member.user?.id || member.userId;
+    return users.find(u => u.id === userId) || { username: '未知', avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=unknown', id: userId || 'unknown' };
   };
 
   return (
@@ -127,15 +133,18 @@ export default function ProjectsList() {
                     </div>
                   </div>
                   <div className="flex -space-x-2 mt-4">
-                    {project.members.slice(0, 4).map(member => (
-                      <img
-                        key={member.userId}
-                        src={member.user.avatarUrl}
-                        alt={member.user.username}
-                        className="w-7 h-7 rounded-full border-2 border-paper-50"
-                        title={member.user.username}
-                      />
-                    ))}
+                    {project.members.slice(0, 4).map(member => {
+                      const u = getMemberUser(member);
+                      return (
+                        <img
+                          key={member.userId}
+                          src={u.avatarUrl}
+                          alt={u.username}
+                          className="w-7 h-7 rounded-full border-2 border-paper-50"
+                          title={u.username}
+                        />
+                      );
+                    })}
                     {project.members.length > 4 && (
                       <div className="w-7 h-7 rounded-full border-2 border-paper-50 bg-ink-100 flex items-center justify-center text-xs text-ink-600 font-medium">
                         +{project.members.length - 4}
