@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   FileText,
   Lock,
@@ -23,6 +23,7 @@ import type { ConflictWarning } from '@shared/types';
 
 export default function ChapterEditor() {
   const { projectId, chapterId } = useParams<{ projectId: string; chapterId: string }>();
+  const navigate = useNavigate();
   const {
     chapters,
     currentChapter,
@@ -31,9 +32,11 @@ export default function ChapterEditor() {
     updateChapterTitle,
     lockChapter,
     unlockChapter,
+    createChapter,
     createVersion,
     checkConflicts,
     resolveConflict,
+    checkAndReleaseExpiredLocks,
     getCharactersForChapter,
     getPlotPointsForChapter,
     currentUser,
@@ -46,9 +49,12 @@ export default function ChapterEditor() {
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [versionSummary, setVersionSummary] = useState('');
   const [conflicts, setConflicts] = useState<ConflictWarning[]>([]);
-  const [autoSaveTimer, setAutoSaveTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showNewChapterModal, setShowNewChapterModal] = useState(false);
+  const [newChapterTitle, setNewChapterTitle] = useState('');
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'info' | 'conflicts'>('info');
+  const lockCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const projectChapters = chapters.filter(c => c.projectId === projectId);
 
@@ -71,12 +77,35 @@ export default function ChapterEditor() {
     }
   }, [currentChapter, currentUser.id, checkConflicts]);
 
+  useEffect(() => {
+    lockCheckIntervalRef.current = setInterval(() => {
+      checkAndReleaseExpiredLocks();
+      if (currentChapter) {
+        const updatedChapter = useAppStore.getState().chapters.find(c => c.id === currentChapter.id);
+        if (updatedChapter) {
+          if (!updatedChapter.lock && isLockedByMe) {
+            setIsLockedByMe(false);
+          }
+          if (updatedChapter.lock?.userId === currentUser.id && !isLockedByMe) {
+            setIsLockedByMe(true);
+          }
+        }
+      }
+    }, 10000);
+
+    return () => {
+      if (lockCheckIntervalRef.current) {
+        clearInterval(lockCheckIntervalRef.current);
+      }
+    };
+  }, [currentChapter, isLockedByMe, currentUser.id, checkAndReleaseExpiredLocks]);
+
   const handleContentChange = useCallback(async (newContent: string) => {
     setContent(newContent);
     
-    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     
-    const timer = setTimeout(async () => {
+    autoSaveTimerRef.current = setTimeout(async () => {
       if (currentChapter && isLockedByMe) {
         await updateChapterContent(currentChapter.id, newContent);
         setLastSaved(new Date());
@@ -86,9 +115,7 @@ export default function ChapterEditor() {
         }
       }
     }, 2000);
-    
-    setAutoSaveTimer(timer);
-  }, [currentChapter, isLockedByMe, autoSaveTimer, updateChapterContent, checkConflicts]);
+  }, [currentChapter, isLockedByMe, updateChapterContent, checkConflicts]);
 
   const handleLock = async () => {
     if (!currentChapter) return;
@@ -109,6 +136,14 @@ export default function ChapterEditor() {
     await createVersion(currentChapter.id, versionSummary);
     setVersionSummary('');
     setShowVersionModal(false);
+  };
+
+  const handleCreateChapter = async () => {
+    if (!newChapterTitle.trim() || !projectId) return;
+    const newChapter = await createChapter(projectId, newChapterTitle);
+    setShowNewChapterModal(false);
+    setNewChapterTitle('');
+    navigate(`/projects/${projectId}/chapters/${newChapter.id}`);
   };
 
   const handleWordCount = (text: string) => {
@@ -173,7 +208,10 @@ export default function ChapterEditor() {
               );
             })}
           </div>
-          <button className="mt-4 btn-secondary w-full flex items-center justify-center gap-2 text-sm">
+          <button
+            onClick={() => setShowNewChapterModal(true)}
+            className="mt-4 btn-secondary w-full flex items-center justify-center gap-2 text-sm"
+          >
             <Plus className="w-4 h-4" />
             新建章节
           </button>
@@ -526,6 +564,47 @@ export default function ChapterEditor() {
                 disabled={!versionSummary.trim()}
               >
                 确认保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewChapterModal && (
+        <div className="fixed inset-0 bg-ink-900/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="card p-6 w-full max-w-md mx-4 animate-slide-in-right">
+            <h2 className="font-serif text-xl font-bold text-ink-800 mb-4">
+              新建章节
+            </h2>
+            <div>
+              <label className="block text-sm font-medium text-ink-700 mb-2">
+                章节标题
+              </label>
+              <input
+                type="text"
+                value={newChapterTitle}
+                onChange={(e) => setNewChapterTitle(e.target.value)}
+                className="input"
+                placeholder="输入章节标题"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowNewChapterModal(false);
+                  setNewChapterTitle('');
+                }}
+                className="btn-secondary flex-1"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateChapter}
+                className="btn-gold flex-1"
+                disabled={!newChapterTitle.trim()}
+              >
+                创建
               </button>
             </div>
           </div>

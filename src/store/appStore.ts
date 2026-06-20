@@ -39,6 +39,7 @@ interface AppState {
   updateChapterContent: (chapterId: string, content: string) => Promise<void>;
   lockChapter: (chapterId: string) => Promise<boolean>;
   unlockChapter: (chapterId: string) => Promise<void>;
+  checkAndReleaseExpiredLocks: () => void;
   createVersion: (chapterId: string, summary: string) => Promise<void>;
   revertToVersion: (versionId: string) => Promise<void>;
   getDiff: (oldContent: string, newContent: string) => Diff[];
@@ -48,6 +49,7 @@ interface AppState {
   checkConflicts: (chapterId: string) => Promise<ConflictWarning[]>;
   resolveConflict: (conflictId: string) => void;
   exportToPdf: (config: PdfExportConfig) => Promise<void>;
+  createProject: (title: string, description: string) => Promise<Project>;
   createChapter: (projectId: string, title: string, parentId?: string) => Promise<Chapter>;
   updateChapterTitle: (chapterId: string, title: string) => void;
   createCharacter: (character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Character>;
@@ -88,7 +90,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true });
     await new Promise(resolve => setTimeout(resolve, 300));
 
+    const state = get();
+    const prevChapter = state.chapters.find(c => c.id === chapterId);
     const wordCount = content.replace(/\s/g, '').length;
+
     set(state => ({
       chapters: state.chapters.map(c =>
         c.id === chapterId
@@ -100,6 +105,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         : state.currentChapter,
       isLoading: false,
     }));
+
+    if (prevChapter && prevChapter.content !== content) {
+      const diffChars = Math.abs(content.replace(/\s/g, '').length - prevChapter.content.replace(/\s/g, '').length);
+      if (diffChars >= 50) {
+        const autoSummary = diffChars > 0
+          ? `自动保存（${diffChars > 0 ? '+' : ''}${diffChars}字）`
+          : '自动保存';
+        const newVersion: ChapterVersion = {
+          id: `version-${Date.now()}`,
+          chapterId,
+          content,
+          authorId: state.currentUser.id,
+          author: state.currentUser,
+          changeSummary: autoSummary,
+          createdAt: new Date(),
+        };
+        set(state => ({
+          chapterVersions: [...state.chapterVersions, newVersion],
+        }));
+      }
+    }
   },
 
   lockChapter: async (chapterId: string): Promise<boolean> => {
@@ -140,6 +166,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? { ...state.currentChapter, lock: undefined }
         : state.currentChapter,
     }));
+  },
+
+  checkAndReleaseExpiredLocks: () => {
+    const now = new Date();
+    set(state => {
+      const updatedChapters = state.chapters.map(c => {
+        if (c.lock && new Date(c.lock.expiresAt) <= now) {
+          return { ...c, lock: undefined };
+        }
+        return c;
+      });
+      const currentChapterUpdated = state.currentChapter?.lock && new Date(state.currentChapter.lock.expiresAt) <= now
+        ? { ...state.currentChapter, lock: undefined }
+        : state.currentChapter;
+      return {
+        chapters: updatedChapters,
+        currentChapter: currentChapterUpdated,
+      };
+    });
   },
 
   createVersion: async (chapterId: string, summary: string) => {
@@ -209,69 +254,157 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   checkConflicts: async (chapterId: string): Promise<ConflictWarning[]> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 300));
     const state = get();
     const chapter = state.chapters.find(c => c.id === chapterId);
     if (!chapter) return [];
 
     const warnings: ConflictWarning[] = [];
 
+    set(s => ({
+      conflictWarnings: s.conflictWarnings.filter(
+        c => c.chapterId !== chapterId || c.resolved
+      ),
+    }));
+
+    const contentLines = chapter.content.split('\n');
+
+    state.characters.forEach(character => {
+      if (character.projectId !== chapter.projectId) return;
+      const nameMentions = contentLines.filter(line => line.includes(character.name));
+      if (nameMentions.length > 0) {
+        const existingAppearance = character.appearances.find(a => a.chapterId === chapterId);
+        if (!existingAppearance) {
+          let firstLine = -1;
+          contentLines.forEach((line, idx) => {
+            if (line.includes(character.name) && firstLine === -1) firstLine = idx + 1;
+          });
+          warnings.push({
+            id: `conflict-char-${Date.now()}-${character.id}`,
+            chapterId,
+            characterId: character.id,
+            character,
+            severity: 'info',
+            message: `检测到人物"${character.name}"在本章出场，但未在人物百科中标记为出场角色。建议更新人物出场记录。`,
+            lineNumber: firstLine > 0 ? firstLine : undefined,
+            createdAt: new Date(),
+            resolved: false,
+          });
+        }
+
+        const traitEntries = Object.entries(character.traits);
+        for (const [key, value] of traitEntries) {
+          const knownTraits = String(value).split(/[、,，]/);
+          for (const trait of knownTraits) {
+            const trimmed = trait.trim();
+            if (trimmed.length >= 2) {
+              const contradictoryPatterns = [
+                { pattern: new RegExp(`不${trimmed}|非${trimmed}|没有${trimmed}|无${trimmed}`, 'g'), desc: `与"${trimmed}"矛盾` },
+              ];
+              for (const cp of contradictoryPatterns) {
+                const matches = contentLines.filter(line => cp.pattern.test(line) && line.includes(character.name));
+                if (matches.length > 0) {
+                  warnings.push({
+                    id: `conflict-trait-${Date.now()}-${character.id}-${key}`,
+                    chapterId,
+                    characterId: character.id,
+                    character,
+                    severity: 'warning',
+                    message: `本章内容可能${cp.desc}：人物"${character.name}"的属性"${key}"设定为"${trimmed}"，但文中出现了"${cp.pattern.source.replace(/[\\|]/g, '|')}"的表述。`,
+                    createdAt: new Date(),
+                    resolved: false,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
     state.plotPoints.forEach(plotPoint => {
       if (plotPoint.status === 'resolved') return;
+      if (plotPoint.projectId !== chapter.projectId) return;
 
       const relatedHints = plotPoint.hints.filter(h => h.chapterId === chapterId);
       const isRelatedChapter = plotPoint.relatedChapterIds.includes(chapterId);
 
       if (relatedHints.length > 0 || isRelatedChapter) {
         plotPoint.hints.forEach(hint => {
-          if (hint.chapterId === chapterId && chapter.content.includes(hint.hintText)) {
-            const lines = chapter.content.split('\n');
-            let lineNumber = -1;
-            lines.forEach((line, idx) => {
-              if (line.includes(hint.hintText.slice(0, 20))) {
-                lineNumber = idx + 1;
-              }
-            });
+          if (hint.chapterId === chapterId) {
+            const wasPresentBefore = relatedHints.length > 0;
+            const isStillPresent = chapter.content.includes(hint.hintText) ||
+              chapter.content.includes(hint.hintText.slice(0, Math.min(15, hint.hintText.length)));
 
-            warnings.push({
-              id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              chapterId,
-              plotPointId: plotPoint.id,
-              plotPoint,
-              severity: 'info',
-              message: `检测到伏笔"${plotPoint.title}"的线索：${hint.hintText}。请确保与后续情节保持一致。`,
-              lineNumber: lineNumber > 0 ? lineNumber : undefined,
-              createdAt: new Date(),
-              resolved: false,
-            });
+            if (wasPresentBefore && !isStillPresent) {
+              warnings.push({
+                id: `conflict-foreshadow-removed-${Date.now()}-${hint.id}`,
+                chapterId,
+                plotPointId: plotPoint.id,
+                plotPoint,
+                severity: 'error',
+                message: `伏笔"${plotPoint.title}"的线索"${hint.hintText.slice(0, 40)}..."似乎已从本章内容中被删除。这可能导致后续情节无法回收，请确认是否为有意修改。`,
+                createdAt: new Date(),
+                resolved: false,
+              });
+            } else if (isStillPresent) {
+              let lineNumber = -1;
+              contentLines.forEach((line, idx) => {
+                if (line.includes(hint.hintText.slice(0, 15)) && lineNumber === -1) {
+                  lineNumber = idx + 1;
+                }
+              });
+              warnings.push({
+                id: `conflict-foreshadow-present-${Date.now()}-${hint.id}`,
+                chapterId,
+                plotPointId: plotPoint.id,
+                plotPoint,
+                severity: 'info',
+                message: `检测到伏笔"${plotPoint.title}"的线索：${hint.hintText.slice(0, 50)}。请确保与后续情节保持一致。`,
+                lineNumber: lineNumber > 0 ? lineNumber : undefined,
+                createdAt: new Date(),
+                resolved: false,
+              });
+            }
           }
         });
 
         if (plotPoint.status === 'pending' && isRelatedChapter) {
-          warnings.push({
-            id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            chapterId,
-            plotPointId: plotPoint.id,
-            plotPoint,
-            severity: 'warning',
-            message: `本章关联了伏笔"${plotPoint.title}"，但该伏笔尚未解决。如果本章内容涉及该伏笔的进展，请更新伏笔状态。`,
-            createdAt: new Date(),
-            resolved: false,
-          });
+          const descriptionKeywords = plotPoint.description
+            .replace(/[，。！？、；：""''（）【】]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 2);
+
+          const matchedKeywords = descriptionKeywords.filter(kw =>
+            chapter.content.includes(kw)
+          );
+
+          if (matchedKeywords.length > 0) {
+            warnings.push({
+              id: `conflict-pending-${Date.now()}-${plotPoint.id}`,
+              chapterId,
+              plotPointId: plotPoint.id,
+              plotPoint,
+              severity: 'warning',
+              message: `本章内容涉及伏笔"${plotPoint.title}"（匹配关键词：${matchedKeywords.slice(0, 5).join('、')}），但该伏笔仍为"待回收"状态。如果本章推进了该伏笔的情节，请更新伏笔状态为"进行中"。`,
+              createdAt: new Date(),
+              resolved: false,
+            });
+          }
         }
       }
     });
 
-    const existingIds = get().conflictWarnings.filter(c => c.chapterId === chapterId).map(c => c.id);
-    const newWarnings = warnings.filter(w => !existingIds.includes(w.id));
-
-    if (newWarnings.length > 0) {
-      set(state => ({
-        conflictWarnings: [...state.conflictWarnings, ...newWarnings],
+    if (warnings.length > 0) {
+      set(s => ({
+        conflictWarnings: [
+          ...s.conflictWarnings.filter(c => c.chapterId !== chapterId),
+          ...warnings,
+        ],
       }));
     }
 
-    return [...get().conflictWarnings.filter(c => c.chapterId === chapterId)];
+    return warnings;
   },
 
   resolveConflict: (conflictId: string) => {
@@ -286,132 +419,179 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   exportToPdf: async (config: PdfExportConfig) => {
     set({ isLoading: true });
-    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const { jsPDF } = await import('jspdf');
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+    try {
+      const { jsPDF } = await import('jspdf');
+      const html2canvas = (await import('html2canvas')).default;
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = config.margin;
-    const contentWidth = pageWidth - margin.left - margin.right;
-
-    let y = margin.top;
-
-    if (config.includeCover) {
-      doc.setFillColor(30, 58, 95);
-      doc.rect(0, 0, pageWidth, pageHeight, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(36);
-      doc.setFont('helvetica', 'bold');
-      const titleLines = doc.splitTextToSize(config.title, contentWidth);
-      titleLines.forEach((line: string, i: number) => {
-        doc.text(line, pageWidth / 2, pageHeight / 2 - 20 + i * 14, { align: 'center' });
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
       });
 
-      if (config.author) {
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(212, 175, 55);
-        doc.text(config.author, pageWidth / 2, pageHeight / 2 + 20, { align: 'center' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = config.margin;
+      const contentWidth = pageWidth - margin.left - margin.right;
+      const contentHeight = pageHeight - margin.top - margin.bottom;
+
+      const renderHtmlToCanvas = async (htmlContent: string, widthPx: number): Promise<HTMLCanvasElement> => {
+        const container = document.createElement('div');
+        container.style.width = `${widthPx}px`;
+        container.style.padding = '0';
+        container.style.margin = '0';
+        container.style.fontFamily = '"Noto Serif SC", "SimSun", serif';
+        container.style.fontSize = `${config.fontSize}px`;
+        container.style.lineHeight = `${config.lineHeight}`;
+        container.style.color = '#000000';
+        container.style.background = '#ffffff';
+        container.style.position = 'absolute';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.innerHTML = htmlContent;
+        document.body.appendChild(container);
+
+        const canvas = await html2canvas(container, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+        });
+
+        document.body.removeChild(container);
+        return canvas;
+      };
+
+      if (config.includeCover) {
+        const coverHtml = `
+          <div style="width:100%;height:${(pageHeight / 0.264583)}px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:'Noto Serif SC',serif;">
+            <h1 style="font-size:32px;font-weight:bold;text-align:center;margin-bottom:16px;color:white;">${config.title}</h1>
+            ${config.author ? `<p style="font-size:16px;color:#d4af37;">${config.author}</p>` : ''}
+            <div style="width:60px;height:2px;background:#d4af37;margin-top:32px;"></div>
+          </div>
+        `;
+        const canvas = await renderHtmlToCanvas(coverHtml, Math.round(pageWidth / 0.264583));
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+        doc.addPage();
       }
 
-      doc.addPage();
-      y = margin.top;
-    }
+      if (config.includeToc) {
+        const tocItems = config.chapterIds.map((chapterId, index) => {
+          const chapter = get().chapters.find(c => c.id === chapterId);
+          return chapter
+            ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dotted #ccc;">
+                <span>${index + 1}. ${chapter.title}</span>
+                <span>${index + 2}</span>
+              </div>`
+            : '';
+        }).join('');
 
-    if (config.includeToc) {
-      doc.setFontSize(20);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(30, 58, 95);
-      doc.text('目录', margin.left, y);
-      y += 15;
+        const tocHtml = `
+          <div style="padding:${margin.top / 0.264583}px ${margin.right / 0.264583}px;">
+            <h2 style="font-size:20px;font-weight:bold;color:#1e3a5f;margin-bottom:16px;">目录</h2>
+            ${tocItems}
+          </div>
+        `;
+        const canvas = await renderHtmlToCanvas(tocHtml, Math.round(contentWidth / 0.264583));
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentWidth, contentHeight);
+        doc.addPage();
+      }
 
-      doc.setFontSize(config.fontSize);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
+      let pageNum = (config.includeCover ? 1 : 0) + (config.includeToc ? 1 : 0);
 
-      let tocY = y;
-      config.chapterIds.forEach((chapterId, index) => {
+      for (let i = 0; i < config.chapterIds.length; i++) {
+        const chapterId = config.chapterIds[i];
         const chapter = get().chapters.find(c => c.id === chapterId);
-        if (chapter) {
-          doc.text(`${index + 1}. ${chapter.title}`, margin.left, tocY);
-          doc.text(`... ${index + 2}`, pageWidth - margin.right, tocY, { align: 'right' });
-          tocY += 8;
-          if (tocY > pageHeight - margin.bottom) {
-            doc.addPage();
-            tocY = margin.top;
+        if (!chapter) continue;
+
+        const chapterContent = chapter.content.replace(/\n/g, '<br/>');
+        const chapterHtml = `
+          <div style="padding:0;">
+            <h2 style="font-size:18px;font-weight:bold;color:#1e3a5f;margin-bottom:8px;">${chapter.title}</h2>
+            <div style="width:40px;height:2px;background:#d4af37;margin-bottom:16px;"></div>
+            <div style="font-size:${config.fontSize}px;line-height:${config.lineHeight};">${chapterContent}</div>
+          </div>
+        `;
+
+        const widthPx = Math.round(contentWidth / 0.264583);
+        const canvas = await renderHtmlToCanvas(chapterHtml, widthPx);
+
+        const imgWidth = contentWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const pageContentHeight = contentHeight;
+
+        let yOffset = 0;
+        while (yOffset < imgHeight) {
+          if (yOffset > 0 || i > 0 || config.includeToc || config.includeCover) {
+            if (yOffset > 0) {
+              doc.addPage();
+            }
+            pageNum++;
           }
-        }
-      });
 
-      doc.addPage();
-      y = margin.top;
-    }
+          const sliceHeight = Math.min(pageContentHeight, imgHeight - yOffset);
+          const sourceY = (yOffset / imgHeight) * canvas.height;
+          const sourceHeight = (sliceHeight / imgHeight) * canvas.height;
 
-    let pageNum = config.includeCover ? 2 : 1;
-    if (config.includeToc) pageNum++;
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sourceHeight;
+          const ctx = pageCanvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(
+              canvas,
+              0, sourceY, canvas.width, sourceHeight,
+              0, 0, canvas.width, sourceHeight
+            );
+          }
 
-    config.chapterIds.forEach((chapterId, chapIdx) => {
-      const chapter = get().chapters.find(c => c.id === chapterId);
-      if (!chapter) return;
+          const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+          doc.addImage(pageImgData, 'JPEG', margin.left, margin.top, imgWidth, sliceHeight);
 
-      if (chapIdx > 0 || config.includeToc || config.includeCover) {
-        if (y > margin.top) {
-          doc.addPage();
-          pageNum++;
-          y = margin.top;
-        }
-      }
-
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(30, 58, 95);
-      doc.text(chapter.title, margin.left, y);
-      y += 12;
-
-      doc.setDrawColor(212, 175, 55);
-      doc.setLineWidth(0.5);
-      doc.line(margin.left, y, margin.left + 40, y);
-      y += 8;
-
-      doc.setFontSize(config.fontSize);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
-      doc.setLineHeightFactor(config.lineHeight);
-
-      const lines = doc.splitTextToSize(chapter.content, contentWidth);
-      lines.forEach((line: string) => {
-        if (y > pageHeight - margin.bottom - 10) {
           if (config.includePageNumbers) {
             doc.setFontSize(10);
             doc.setTextColor(128, 128, 128);
             doc.text(`- ${pageNum} -`, pageWidth / 2, pageHeight - margin.bottom / 2, { align: 'center' });
           }
-          doc.addPage();
-          pageNum++;
-          y = margin.top;
-          doc.setFontSize(config.fontSize);
-          doc.setTextColor(0, 0, 0);
+
+          yOffset += pageContentHeight;
         }
-        doc.text(line, margin.left, y);
-        y += config.fontSize * config.lineHeight * 0.35;
-      });
-
-      if (config.includePageNumbers) {
-        doc.setFontSize(10);
-        doc.setTextColor(128, 128, 128);
-        doc.text(`- ${pageNum} -`, pageWidth / 2, pageHeight - margin.bottom / 2, { align: 'center' });
       }
-    });
 
-    doc.save(`${config.title || '小说'}.pdf`);
-    set({ isLoading: false });
+      doc.save(`${config.title || '小说'}.pdf`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  createProject: async (title: string, description: string): Promise<Project> => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const state = get();
+    const newProject: Project = {
+      id: `project-${Date.now()}`,
+      title,
+      description,
+      creatorId: state.currentUser.id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      members: [{
+        userId: state.currentUser.id,
+        user: state.currentUser,
+        role: 'creator',
+        joinedAt: new Date(),
+      }],
+    };
+
+    set(state => ({
+      projects: [...state.projects, newProject],
+    }));
+
+    return newProject;
   },
 
   createChapter: async (projectId: string, title: string, parentId?: string): Promise<Chapter> => {

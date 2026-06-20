@@ -19,7 +19,7 @@ import type { Character } from '@shared/types';
 
 export default function CharacterEncyclopedia() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { characters, chapters } = useAppStore();
+  const { characters, chapters, createCharacter } = useAppStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -58,6 +58,21 @@ export default function CharacterEncyclopedia() {
 
   const getChapterTitle = (chapterId: string) => {
     return chapters.find(c => c.id === chapterId)?.title || '未知章节';
+  };
+
+  const handleCreateCharacter = async () => {
+    if (!newCharacter.name.trim() || !projectId) return;
+    await createCharacter({
+      name: newCharacter.name,
+      description: newCharacter.description,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`,
+      projectId,
+      traits: newCharacter.traits,
+      appearances: [],
+      relationships: [],
+    });
+    setShowCreateModal(false);
+    setNewCharacter({ name: '', description: '', traits: {} });
   };
 
   const totalAppearances = selectedCharacter?.appearances.length || 0;
@@ -384,6 +399,7 @@ export default function CharacterEncyclopedia() {
                   取消
                 </button>
                 <button
+                  onClick={handleCreateCharacter}
                   className="btn-gold flex-1"
                   disabled={!newCharacter.name.trim()}
                 >
