@@ -72,6 +72,14 @@ export interface CharacterAppearance {
   createdAt: Date;
 }
 
+export interface VoiceSettings {
+  pitch: number;
+  rate: number;
+  voiceName: string;
+  voiceURI?: string;
+  lang?: string;
+}
+
 export interface Character {
   id: string;
   projectId: string;
@@ -81,6 +89,7 @@ export interface Character {
   traits: Record<string, string>;
   relationships: CharacterRelation[];
   appearances: CharacterAppearance[];
+  voiceSettings?: VoiceSettings;
   createdAt: Date;
   updatedAt: Date;
 }

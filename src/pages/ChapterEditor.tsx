@@ -8,7 +8,6 @@ import {
   History,
   Plus,
   ChevronRight,
-  ChevronDown,
   AlertTriangle,
   CheckCircle2,
   Info,
@@ -16,10 +15,16 @@ import {
   Clock,
   Edit3,
   BookOpen,
+  Volume2,
+  X,
+  Play,
+  Square,
+  ChevronDown,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
-import type { ConflictWarning } from '@shared/types';
+import { speak, stopSpeak, isSpeaking } from '@/lib/tts';
+import type { ConflictWarning, Character } from '@shared/types';
 
 export default function ChapterEditor() {
   const { projectId, chapterId } = useParams<{ projectId: string; chapterId: string }>();
@@ -39,6 +44,7 @@ export default function ChapterEditor() {
     checkAndReleaseExpiredLocks,
     getCharactersForChapter,
     getPlotPointsForChapter,
+    characters,
     currentUser,
     isLoading,
   } = useAppStore();
@@ -55,7 +61,16 @@ export default function ChapterEditor() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'info' | 'conflicts'>('info');
   const lockCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [selectedText, setSelectedText] = useState('');
+  const [showSpeakToolbar, setShowSpeakToolbar] = useState(false);
+  const [speakToolbarPos, setSpeakToolbarPos] = useState({ top: 0, left: 0 });
+  const [isCurrentlySpeaking, setIsCurrentlySpeaking] = useState(false);
+  const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
+  const [speakingCharacterName, setSpeakingCharacterName] = useState<string>('');
+
+  const projectCharacters = characters.filter(c => c.projectId === projectId);
   const projectChapters = chapters.filter(c => c.projectId === projectId);
 
   useEffect(() => {
@@ -100,6 +115,79 @@ export default function ChapterEditor() {
       }
     };
   }, [currentChapter, isLockedByMe, currentUser.id, checkAndReleaseExpiredLocks]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!isSpeaking()) {
+        setIsCurrentlySpeaking(false);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleTextSelection = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value.substring(start, end);
+
+    if (text.trim().length > 0) {
+      setSelectedText(text);
+
+      const rect = textarea.getBoundingClientRect();
+      const linesBefore = textarea.value.substring(0, start).split('\n').length;
+      const lineHeight = 32;
+      const scrollTop = textarea.scrollTop;
+
+      setSpeakToolbarPos({
+        top: rect.top + Math.min(linesBefore * lineHeight - scrollTop, rect.height - 100) + window.scrollY - 60,
+        left: rect.left + rect.width / 2 + window.scrollX,
+      });
+      setShowSpeakToolbar(true);
+    } else {
+      setShowSpeakToolbar(false);
+      setSelectedText('');
+      setShowCharacterDropdown(false);
+    }
+  }, []);
+
+  const handleSpeakWithCharacter = async (character: Character) => {
+    if (!selectedText.trim()) return;
+
+    if (isCurrentlySpeaking) {
+      stopSpeak();
+      setIsCurrentlySpeaking(false);
+      return;
+    }
+
+    setShowCharacterDropdown(false);
+    setIsCurrentlySpeaking(true);
+    setSpeakingCharacterName(character.name);
+
+    await speak({
+      text: selectedText,
+      pitch: character.voiceSettings?.pitch ?? 1.0,
+      rate: character.voiceSettings?.rate ?? 1.0,
+      voiceURI: character.voiceSettings?.voiceURI,
+      lang: character.voiceSettings?.lang || 'zh-CN',
+      onEnd: () => {
+        setIsCurrentlySpeaking(false);
+        setSpeakingCharacterName('');
+      },
+      onError: () => {
+        setIsCurrentlySpeaking(false);
+        setSpeakingCharacterName('');
+      },
+    });
+  };
+
+  const handleStopSpeaking = () => {
+    stopSpeak();
+    setIsCurrentlySpeaking(false);
+    setSpeakingCharacterName('');
+  };
 
   const handleContentChange = useCallback(async (newContent: string) => {
     setContent(newContent);
@@ -151,12 +239,18 @@ export default function ChapterEditor() {
     return text.replace(/\s/g, '').length;
   };
 
+  useEffect(() => {
+    return () => {
+      stopSpeak();
+    };
+  }, []);
+
   const relatedCharacters = currentChapter ? getCharactersForChapter(currentChapter.id) : [];
   const relatedPlotPoints = currentChapter ? getPlotPointsForChapter(currentChapter.id) : [];
   const unresolvedConflicts = conflicts.filter(c => !c.resolved);
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex gap-6">
+    <div className="h-[calc(100vh-8rem)] flex gap-6 relative">
       <div className="w-64 flex-shrink-0">
         <div className="card p-4 h-full flex flex-col">
           <div className="flex items-center justify-between mb-4">
@@ -300,12 +394,18 @@ export default function ChapterEditor() {
               </div>
             </div>
 
-            <div className="card flex-1 flex flex-col overflow-hidden">
+            <div className="card flex-1 flex flex-col overflow-hidden relative">
               <textarea
+                ref={textareaRef}
                 value={content}
-                onChange={(e) => handleContentChange(e.target.value)}
+                onChange={(e) => {
+                  handleContentChange(e.target.value);
+                }}
+                onSelect={handleTextSelection}
+                onKeyUp={handleTextSelection}
+                onMouseUp={handleTextSelection}
                 disabled={!isLockedByMe}
-                placeholder={isLockedByMe ? '开始创作...' : '章节已被锁定，无法编辑'}
+                placeholder={isLockedByMe ? '开始创作...\n\n小提示：选中文字后可以选择人物进行朗读！' : '章节已被锁定，无法编辑'}
                 className={cn(
                   'flex-1 w-full p-8 resize-none bg-paper-50/50 paper-bg font-serif text-lg leading-8 text-ink-800',
                   'outline-none border-none scrollbar-thin',
@@ -326,6 +426,114 @@ export default function ChapterEditor() {
           </div>
         )}
       </div>
+
+      {showSpeakToolbar && selectedText && (
+        <div
+          className="fixed z-50 animate-slide-in-up"
+          style={{
+            top: speakToolbarPos.top,
+            left: speakToolbarPos.left,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div className="card shadow-ink-xl p-2 flex items-center gap-2 bg-ink-800 border-ink-700">
+            {isCurrentlySpeaking ? (
+              <button
+                onClick={handleStopSpeaking}
+                className="flex items-center gap-2 px-3 py-2 bg-brick-500 hover:bg-brick-600 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <Square className="w-4 h-4" />
+                停止 {speakingCharacterName && `(${speakingCharacterName})`}
+              </button>
+            ) : (
+              <div className="relative">
+                <button
+                  onClick={() => setShowCharacterDropdown(!showCharacterDropdown)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  选择人物朗读
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                {showCharacterDropdown && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 card shadow-ink-xl border border-paper-200 max-h-80 overflow-y-auto scrollbar-thin">
+                    <div className="p-2">
+                      <div className="text-xs text-ink-400 uppercase tracking-wider mb-2 px-2">本章出场人物</div>
+                      {relatedCharacters.length > 0 ? (
+                        relatedCharacters.map((char) => (
+                          <button
+                            key={char.id}
+                            onClick={() => handleSpeakWithCharacter(char)}
+                            className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 transition-colors text-left"
+                          >
+                            <img
+                              src={char.avatarUrl}
+                              alt={char.name}
+                              className="w-8 h-8 rounded-full"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-ink-800">{char.name}</div>
+                              <div className="text-xs text-ink-400 truncate">
+                                {char.voiceSettings ? `音高${char.voiceSettings.pitch.toFixed(2)} · 语速${char.voiceSettings.rate.toFixed(2)}x` : '默认声音'}
+                              </div>
+                            </div>
+                            <Volume2 className="w-4 h-4 text-purple-500" />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-sm text-ink-400 px-2 py-2">暂无出场人物</div>
+                      )}
+                      {projectCharacters.length > relatedCharacters.length && (
+                        <>
+                          <div className="border-t border-paper-200 my-2" />
+                          <div className="text-xs text-ink-400 uppercase tracking-wider mb-2 px-2">全部人物</div>
+                          {projectCharacters
+                            .filter(c => !relatedCharacters.find(r => r.id === c.id))
+                            .map((char) => (
+                              <button
+                                key={char.id}
+                                onClick={() => handleSpeakWithCharacter(char)}
+                                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 transition-colors text-left"
+                              >
+                                <img
+                                  src={char.avatarUrl}
+                                  alt={char.name}
+                                  className="w-8 h-8 rounded-full opacity-70"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-ink-700">{char.name}</div>
+                                  <div className="text-xs text-ink-400 truncate">
+                                    {char.voiceSettings ? `音高${char.voiceSettings.pitch.toFixed(2)} · 语速${char.voiceSettings.rate.toFixed(2)}x` : '默认声音'}
+                                  </div>
+                                </div>
+                                <Volume2 className="w-4 h-4 text-purple-400" />
+                              </button>
+                            ))}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="w-px h-6 bg-ink-600 mx-1" />
+            <div className="text-xs text-ink-300 px-2 max-w-[120px] truncate">
+              "{selectedText.slice(0, 20)}{selectedText.length > 20 ? '...' : ''}"
+            </div>
+            <button
+              onClick={() => {
+                setShowSpeakToolbar(false);
+                setSelectedText('');
+                setShowCharacterDropdown(false);
+                handleStopSpeaking();
+              }}
+              className="p-1.5 hover:bg-ink-700 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4 text-ink-400" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {currentChapter && (
         <div className="w-80 flex-shrink-0">
@@ -373,19 +581,41 @@ export default function ChapterEditor() {
                         {relatedCharacters.map((char) => (
                           <div
                             key={char.id}
-                            className="flex items-center gap-3 p-2 bg-paper-100 rounded-lg"
+                            className="flex items-center gap-3 p-2 bg-paper-100 rounded-lg group"
                           >
                             <img
                               src={char.avatarUrl}
                               alt={char.name}
                               className="w-8 h-8 rounded-full"
                             />
-                            <div>
+                            <div className="flex-1">
                               <div className="text-sm font-medium text-ink-700">{char.name}</div>
                               <div className="text-xs text-ink-400 truncate">
                                 {char.traits.occupation}
                               </div>
                             </div>
+                            <button
+                              onClick={() => {
+                                setSelectedText(`${char.name}：${char.description.slice(0, 30)}...`);
+                                const ta = textareaRef.current;
+                                if (ta) {
+                                  const rect = ta.getBoundingClientRect();
+                                  setSpeakToolbarPos({
+                                    top: rect.top + window.scrollY - 60,
+                                    left: rect.left + rect.width / 2 + window.scrollX,
+                                  });
+                                  setShowSpeakToolbar(true);
+                                  setTimeout(() => {
+                                    setShowCharacterDropdown(true);
+                                    handleSpeakWithCharacter(char);
+                                  }, 100);
+                                }
+                              }}
+                              className="p-1.5 hover:bg-purple-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                              title="试听此人物声音"
+                            >
+                              <Volume2 className="w-4 h-4 text-purple-600" />
+                            </button>
                           </div>
                         ))}
                       </div>

@@ -504,6 +504,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       avatarUrl: characterData.avatarUrl,
       traits: characterData.traits,
       projectId: characterData.projectId,
+      voiceSettings: characterData.voiceSettings,
     }));
     set(state => ({ characters: [...state.characters, character] }));
     return character;

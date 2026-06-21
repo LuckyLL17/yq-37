@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   UsersRound,
@@ -12,18 +12,26 @@ import {
   FileText,
   Link,
   ChevronRight,
+  Volume2,
+  Play,
+  Square,
+  Settings,
+  Mic,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
-import type { Character } from '@shared/types';
+import { speak, stopSpeak, isSpeaking, getChineseVoices } from '@/lib/tts';
+import type { Character, VoiceSettings } from '@shared/types';
 
 export default function CharacterEncyclopedia() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { characters, chapters, createCharacter } = useAppStore();
+  const { characters, chapters, createCharacter, updateCharacter, deleteCharacter } = useAppStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [editingVoiceCharId, setEditingVoiceCharId] = useState<string | null>(null);
   const [newCharacter, setNewCharacter] = useState({
     name: '',
     description: '',
@@ -31,6 +39,31 @@ export default function CharacterEncyclopedia() {
   });
   const [traitKey, setTraitKey] = useState('');
   const [traitValue, setTraitValue] = useState('');
+
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({
+    pitch: 1.0,
+    rate: 1.0,
+    voiceName: '默认',
+    lang: 'zh-CN',
+  });
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [isPreviewSpeaking, setIsPreviewSpeaking] = useState(false);
+  const [previewText, setPreviewText] = useState('你好，我是这个人物的声音，欢迎来到我们的故事世界。');
+
+  useEffect(() => {
+    getChineseVoices().then(voices => {
+      setAvailableVoices(voices);
+    });
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!isSpeaking()) {
+        setIsPreviewSpeaking(false);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
 
   const projectCharacters = characters.filter(c => c.projectId === projectId);
   const filteredCharacters = projectCharacters.filter(c =>
@@ -70,10 +103,82 @@ export default function CharacterEncyclopedia() {
       traits: newCharacter.traits,
       appearances: [],
       relationships: [],
+      voiceSettings: {
+        pitch: 1.0,
+        rate: 1.0,
+        voiceName: '默认',
+        lang: 'zh-CN',
+      },
     });
     setShowCreateModal(false);
     setNewCharacter({ name: '', description: '', traits: {} });
   };
+
+  const handleDeleteCharacter = async (charId: string) => {
+    if (confirm('确定要删除这个人物吗？')) {
+      await deleteCharacter(charId);
+      if (selectedCharacter?.id === charId) {
+        setSelectedCharacter(null);
+      }
+    }
+  };
+
+  const openVoiceModal = (char: Character) => {
+    setEditingVoiceCharId(char.id);
+    setVoiceSettings(char.voiceSettings || {
+      pitch: 1.0,
+      rate: 1.0,
+      voiceName: '默认',
+      lang: 'zh-CN',
+    });
+    setPreviewText(`${char.name}：你好，我是${char.name}。`);
+    setShowVoiceModal(true);
+  };
+
+  const saveVoiceSettings = async () => {
+    if (!editingVoiceCharId) return;
+    await updateCharacter(editingVoiceCharId, { voiceSettings });
+    setShowVoiceModal(false);
+    setEditingVoiceCharId(null);
+    const updated = characters.find(c => c.id === editingVoiceCharId);
+    if (updated) {
+      setSelectedCharacter({ ...updated, voiceSettings });
+    }
+  };
+
+  const handlePreviewSpeak = async () => {
+    if (isPreviewSpeaking) {
+      stopSpeak();
+      setIsPreviewSpeaking(false);
+      return;
+    }
+    setIsPreviewSpeaking(true);
+    await speak({
+      text: previewText,
+      pitch: voiceSettings.pitch,
+      rate: voiceSettings.rate,
+      voiceURI: voiceSettings.voiceURI,
+      lang: voiceSettings.lang || 'zh-CN',
+      onEnd: () => setIsPreviewSpeaking(false),
+      onError: () => setIsPreviewSpeaking(false),
+    });
+  };
+
+  const handleCharacterSpeak = async (char: Character) => {
+    await speak({
+      text: `我是${char.name}。${char.description.slice(0, 30)}...`,
+      pitch: char.voiceSettings?.pitch ?? 1.0,
+      rate: char.voiceSettings?.rate ?? 1.0,
+      voiceURI: char.voiceSettings?.voiceURI,
+      lang: char.voiceSettings?.lang || 'zh-CN',
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      stopSpeak();
+    };
+  }, []);
 
   const totalAppearances = selectedCharacter?.appearances.length || 0;
 
@@ -112,7 +217,7 @@ export default function CharacterEncyclopedia() {
                 onClick={() => setSelectedCharacter(character)}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all',
-                  'perspective-1000',
+                  'perspective-1000 group',
                   selectedCharacter?.id === character.id
                     ? 'bg-ink-800 text-white'
                     : 'bg-paper-50 border border-paper-200 hover:border-gold-300 hover:shadow-paper-hover hover:-translate-y-0.5'
@@ -143,13 +248,30 @@ export default function CharacterEncyclopedia() {
                     {character.traits.occupation || '未设定职业'}
                   </p>
                 </div>
-                <div className={cn(
-                  'text-xs px-2 py-1 rounded-full',
-                  selectedCharacter?.id === character.id
-                    ? 'bg-ink-700 text-gold-400'
-                    : 'bg-gold-100 text-gold-700'
-                )}>
-                  {character.appearances.length}次出场
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCharacterSpeak(character);
+                    }}
+                    className={cn(
+                      'p-1.5 rounded-lg transition-colors',
+                      selectedCharacter?.id === character.id
+                        ? 'hover:bg-ink-700 text-gold-400'
+                        : 'hover:bg-paper-200 text-ink-500'
+                    )}
+                    title="试听声音"
+                  >
+                    <Volume2 className="w-4 h-4" />
+                  </button>
+                  <div className={cn(
+                    'text-xs px-2 py-1 rounded-full',
+                    selectedCharacter?.id === character.id
+                      ? 'bg-ink-700 text-gold-400'
+                      : 'bg-gold-100 text-gold-700'
+                  )}>
+                    {character.appearances.length}次
+                  </div>
                 </div>
               </div>
             ))}
@@ -179,21 +301,87 @@ export default function CharacterEncyclopedia() {
                   />
                 </div>
                 <div>
-                  <h1 className="font-serif text-3xl font-bold text-ink-800 mb-2">
+                  <h1 className="font-serif text-3xl font-bold text-ink-800 mb-2 flex items-center gap-3">
                     {selectedCharacter.name}
+                    <button
+                      onClick={() => handleCharacterSpeak(selectedCharacter)}
+                      className="p-2 bg-gold-100 hover:bg-gold-200 rounded-lg transition-colors"
+                      title="试听声音"
+                    >
+                      <Volume2 className="w-5 h-5 text-gold-700" />
+                    </button>
                   </h1>
                   <p className="text-ink-500 max-w-xl">
                     {selectedCharacter.description}
                   </p>
                 </div>
               </div>
-              <button className="p-2 hover:bg-paper-200 rounded-lg transition-colors">
-                <Edit3 className="w-5 h-5 text-ink-500" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openVoiceModal(selectedCharacter)}
+                  className="p-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
+                  title="声音设定"
+                >
+                  <Settings className="w-5 h-5 text-purple-700" />
+                </button>
+                <button
+                  onClick={() => handleDeleteCharacter(selectedCharacter.id)}
+                  className="p-2 hover:bg-brick-100 rounded-lg transition-colors"
+                  title="删除人物"
+                >
+                  <Trash2 className="w-5 h-5 text-brick-500" />
+                </button>
+                <button className="p-2 hover:bg-paper-200 rounded-lg transition-colors">
+                  <Edit3 className="w-5 h-5 text-ink-500" />
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-2 space-y-6">
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-200">
+                  <h3 className="font-serif text-lg font-bold text-ink-800 mb-4 flex items-center gap-2">
+                    <Mic className="w-4 h-4 text-purple-600" />
+                    声音设定
+                    <button
+                      onClick={() => openVoiceModal(selectedCharacter)}
+                      className="ml-auto text-sm text-purple-600 hover:text-purple-800 font-normal"
+                    >
+                      编辑配置
+                    </button>
+                  </h3>
+                  {selectedCharacter.voiceSettings ? (
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-3 bg-white rounded-lg border border-purple-100">
+                        <div className="text-xs text-purple-500 uppercase tracking-wider mb-1">音高</div>
+                        <div className="text-ink-700 font-medium">
+                          {selectedCharacter.voiceSettings.pitch.toFixed(2)}
+                          <span className="text-xs text-ink-400 ml-1">
+                            ({selectedCharacter.voiceSettings.pitch < 0.9 ? '低沉' : selectedCharacter.voiceSettings.pitch > 1.1 ? '高亢' : '正常'})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-purple-100">
+                        <div className="text-xs text-purple-500 uppercase tracking-wider mb-1">语速</div>
+                        <div className="text-ink-700 font-medium">
+                          {selectedCharacter.voiceSettings.rate.toFixed(2)}x
+                          <span className="text-xs text-ink-400 ml-1">
+                            ({selectedCharacter.voiceSettings.rate < 0.9 ? '慢速' : selectedCharacter.voiceSettings.rate > 1.1 ? '快速' : '正常'})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-purple-100">
+                        <div className="text-xs text-purple-500 uppercase tracking-wider mb-1">音色</div>
+                        <div className="text-ink-700 font-medium truncate">
+                          {selectedCharacter.voiceSettings.voiceName || '默认'}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-ink-400 text-sm">未配置声音设定，点击"编辑配置"开始设置</p>
+                  )}
+                </div>
+
                 <div className="bg-paper-50 rounded-xl p-5 border border-paper-200">
                   <h3 className="font-serif text-lg font-bold text-ink-800 mb-4 flex items-center gap-2">
                     <FileText className="w-4 h-4 text-gold-500" />
@@ -404,6 +592,169 @@ export default function CharacterEncyclopedia() {
                   disabled={!newCharacter.name.trim()}
                 >
                   创建人物
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVoiceModal && (
+        <div className="fixed inset-0 bg-ink-900/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="card p-6 w-full max-w-md mx-4 animate-slide-in-right">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-serif text-xl font-bold text-ink-800 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-purple-600" />
+                声音设定
+              </h2>
+              <button
+                onClick={() => {
+                  setShowVoiceModal(false);
+                  setEditingVoiceCharId(null);
+                  stopSpeak();
+                  setIsPreviewSpeaking(false);
+                }}
+                className="p-1.5 hover:bg-paper-200 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-ink-500" />
+              </button>
+            </div>
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  音色选择
+                </label>
+                <select
+                  value={voiceSettings.voiceURI || ''}
+                  onChange={(e) => {
+                    const voice = availableVoices.find(v => v.voiceURI === e.target.value);
+                    setVoiceSettings(prev => ({
+                      ...prev,
+                      voiceURI: e.target.value || undefined,
+                      voiceName: voice?.name || '默认',
+                      lang: voice?.lang || prev.lang,
+                    }));
+                  }}
+                  className="input"
+                >
+                  <option value="">默认系统语音</option>
+                  {availableVoices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} ({v.lang}) {v.default ? ' - 默认' : ''}
+                    </option>
+                  ))}
+                </select>
+                {availableVoices.length === 0 && (
+                  <p className="text-xs text-ink-400 mt-1">正在加载系统语音...</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2 flex justify-between">
+                  <span>音高 (Pitch)</span>
+                  <span className="text-purple-600 font-semibold">{voiceSettings.pitch.toFixed(2)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={voiceSettings.pitch}
+                  onChange={(e) => setVoiceSettings(prev => ({
+                    ...prev,
+                    pitch: parseFloat(e.target.value),
+                  }))}
+                  className="w-full h-2 bg-paper-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                />
+                <div className="flex justify-between text-xs text-ink-400 mt-1">
+                  <span>低沉</span>
+                  <span>正常</span>
+                  <span>高亢</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2 flex justify-between">
+                  <span>语速 (Rate)</span>
+                  <span className="text-purple-600 font-semibold">{voiceSettings.rate.toFixed(2)}x</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={voiceSettings.rate}
+                  onChange={(e) => setVoiceSettings(prev => ({
+                    ...prev,
+                    rate: parseFloat(e.target.value),
+                  }))}
+                  className="w-full h-2 bg-paper-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                />
+                <div className="flex justify-between text-xs text-ink-400 mt-1">
+                  <span>慢速</span>
+                  <span>正常</span>
+                  <span>快速</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  试听文本
+                </label>
+                <textarea
+                  value={previewText}
+                  onChange={(e) => setPreviewText(e.target.value)}
+                  className="textarea h-20"
+                  placeholder="输入要试听的文本..."
+                />
+              </div>
+
+              <button
+                onClick={handlePreviewSpeak}
+                className={cn(
+                  'w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all',
+                  isPreviewSpeaking
+                    ? 'bg-brick-500 hover:bg-brick-600 text-white'
+                    : 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-lg hover:shadow-xl'
+                )}
+              >
+                {isPreviewSpeaking ? (
+                  <>
+                    <Square className="w-5 h-5" />
+                    停止播放
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    试听声音
+                  </>
+                )}
+              </button>
+
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                <div className="text-xs text-purple-600 font-medium mb-1">当前配置预览</div>
+                <div className="text-sm text-ink-600">
+                  音色: {voiceSettings.voiceName || '默认'} · 音高: {voiceSettings.pitch.toFixed(2)} · 语速: {voiceSettings.rate.toFixed(2)}x
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowVoiceModal(false);
+                    setEditingVoiceCharId(null);
+                    stopSpeak();
+                    setIsPreviewSpeaking(false);
+                  }}
+                  className="btn-secondary flex-1"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={saveVoiceSettings}
+                  className="btn-gold flex-1"
+                >
+                  保存设定
                 </button>
               </div>
             </div>

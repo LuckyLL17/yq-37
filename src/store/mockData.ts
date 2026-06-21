@@ -350,6 +350,12 @@ export const mockCharacters: Character[] = [
       background: '天文学世家',
       speciality: '深空观测、数据分析',
     },
+    voiceSettings: {
+      pitch: 1.0,
+      rate: 1.0,
+      voiceName: '默认男声',
+      lang: 'zh-CN',
+    },
     relationships: [
       {
         id: 'rel-1',
@@ -402,6 +408,12 @@ export const mockCharacters: Character[] = [
       background: '医学世家',
       speciality: '太空医学、心理学',
     },
+    voiceSettings: {
+      pitch: 1.3,
+      rate: 0.95,
+      voiceName: '默认女声',
+      lang: 'zh-CN',
+    },
     relationships: [
       {
         id: 'rel-3',
@@ -438,6 +450,12 @@ export const mockCharacters: Character[] = [
       background: '海军出身，转入太空军',
       speciality: '舰艇指挥、危机处理',
     },
+    voiceSettings: {
+      pitch: 0.8,
+      rate: 0.9,
+      voiceName: '默认男声',
+      lang: 'zh-CN',
+    },
     relationships: [],
     appearances: [
       {
@@ -465,6 +483,12 @@ export const mockCharacters: Character[] = [
       background: '工程师出身',
       speciality: '舰船维护、安全管理',
     },
+    voiceSettings: {
+      pitch: 0.9,
+      rate: 1.05,
+      voiceName: '默认男声',
+      lang: 'zh-CN',
+    },
     relationships: [],
     appearances: [
       {
@@ -491,6 +515,12 @@ export const mockCharacters: Character[] = [
       personality: '神秘、未知',
       background: '可能创造了人类',
       speciality: '超级科技',
+    },
+    voiceSettings: {
+      pitch: 0.6,
+      rate: 0.8,
+      voiceName: '默认男声',
+      lang: 'zh-CN',
     },
     relationships: [],
     appearances: [],
