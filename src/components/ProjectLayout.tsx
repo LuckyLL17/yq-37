@@ -12,6 +12,7 @@ import {
   Lock,
   ChevronRight,
   Lightbulb,
+  BarChart3,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
     { path: `/projects/${projectId}/characters`, label: '人物百科', icon: UsersRound },
     { path: `/projects/${projectId}/plot`, label: '情节管理', icon: GitBranch },
     { path: `/projects/${projectId}/inspiration`, label: '灵感墙', icon: Lightbulb },
+    { path: `/projects/${projectId}/dashboard`, label: '写作数据', icon: BarChart3 },
     { path: `/projects/${projectId}/export`, label: '导出中心', icon: Download },
   ];
 

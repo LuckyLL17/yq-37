@@ -8,6 +8,7 @@ import CharacterEncyclopedia from "@/pages/CharacterEncyclopedia";
 import PlotManager from "@/pages/PlotManager";
 import ExportCenter from "@/pages/ExportCenter";
 import InspirationWall from "@/pages/InspirationWall";
+import WritingDashboard from "@/pages/WritingDashboard";
 import ProjectLayout from "@/components/ProjectLayout";
 import { useAppStore } from "@/store/appStore";
 
@@ -102,6 +103,14 @@ export default function App() {
             element={
               <ProjectLayout>
                 <InspirationWall />
+              </ProjectLayout>
+            }
+          />
+          <Route
+            path="/projects/:projectId/dashboard"
+            element={
+              <ProjectLayout>
+                <WritingDashboard />
               </ProjectLayout>
             }
           />
