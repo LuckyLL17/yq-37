@@ -117,6 +117,7 @@ export interface PlotPoint {
   relatedChapterIds: string[];
   relatedCharacterIds: string[];
   hints: PlotHint[];
+  timelinePosition?: number;
   createdAt: Date;
 }
 

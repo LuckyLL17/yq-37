@@ -658,6 +658,7 @@ export const mockPlotPoints: PlotPoint[] = [
     status: 'resolved',
     relatedChapterIds: ['chapter-1', 'chapter-2'],
     relatedCharacterIds: ['char-1'],
+    timelinePosition: 1,
     hints: [
       {
         id: 'hint-1',
@@ -689,6 +690,7 @@ export const mockPlotPoints: PlotPoint[] = [
     status: 'active',
     relatedChapterIds: ['chapter-3'],
     relatedCharacterIds: ['char-1', 'char-5'],
+    timelinePosition: 3,
     hints: [
       {
         id: 'hint-3',
@@ -720,6 +722,7 @@ export const mockPlotPoints: PlotPoint[] = [
     status: 'pending',
     relatedChapterIds: ['chapter-4'],
     relatedCharacterIds: ['char-1', 'char-5'],
+    timelinePosition: 4,
     hints: [
       {
         id: 'hint-5',
@@ -740,6 +743,7 @@ export const mockPlotPoints: PlotPoint[] = [
     status: 'pending',
     relatedChapterIds: ['chapter-3', 'chapter-4'],
     relatedCharacterIds: ['char-3'],
+    timelinePosition: 3,
     hints: [],
     createdAt: new Date('2025-08-20'),
   },
@@ -752,6 +756,7 @@ export const mockPlotPoints: PlotPoint[] = [
     status: 'pending',
     relatedChapterIds: [],
     relatedCharacterIds: ['char-1', 'char-2', 'char-3', 'char-5'],
+    timelinePosition: 10,
     hints: [],
     createdAt: new Date('2025-06-15'),
   },
