@@ -17,11 +17,14 @@ import {
   Square,
   Settings,
   Mic,
+  List,
+  GitBranch,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
 import { speak, stopSpeak, isSpeaking, getChineseVoices } from '@/lib/tts';
 import type { Character, VoiceSettings } from '@shared/types';
+import CharacterGraphView from '@/components/CharacterGraphView';
 
 export default function CharacterEncyclopedia() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -32,6 +35,7 @@ export default function CharacterEncyclopedia() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [editingVoiceCharId, setEditingVoiceCharId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [newCharacter, setNewCharacter] = useState({
     name: '',
     description: '',
@@ -184,111 +188,159 @@ export default function CharacterEncyclopedia() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-6">
-      <div className="w-80 flex-shrink-0">
+      <div className={cn(
+        'flex-shrink-0 transition-all duration-300',
+        viewMode === 'list' ? 'w-80' : 'w-full'
+      )}>
         <div className="card p-4 h-full flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-serif text-lg font-bold text-ink-800 flex items-center gap-2">
               <UsersRound className="w-5 h-5 text-gold-500" />
-              人物列表
+              {viewMode === 'list' ? '人物列表' : '人物关系图谱'}
             </h2>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="p-2 bg-gold-100 hover:bg-gold-200 rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4 text-gold-700" />
-            </button>
-          </div>
-
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input pl-9 py-2"
-              placeholder="搜索人物..."
-            />
-          </div>
-
-          <div className="flex-1 overflow-y-auto scrollbar-thin space-y-2">
-            {filteredCharacters.map((character, index) => (
-              <div
-                key={character.id}
-                onClick={() => setSelectedCharacter(character)}
-                className={cn(
-                  'flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all',
-                  'perspective-1000 group',
-                  selectedCharacter?.id === character.id
-                    ? 'bg-ink-800 text-white'
-                    : 'bg-paper-50 border border-paper-200 hover:border-gold-300 hover:shadow-paper-hover hover:-translate-y-0.5'
-                )}
-                style={{ animationDelay: `${index * 50}ms` }}
+            <div className="flex items-center gap-1">
+              <div className="flex items-center bg-paper-100 rounded-lg p-1 mr-2">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    'p-1.5 rounded-md transition-all',
+                    viewMode === 'list'
+                      ? 'bg-ink-800 text-white shadow-sm'
+                      : 'text-ink-500 hover:text-ink-700'
+                  )}
+                  title="列表视图"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('graph')}
+                  className={cn(
+                    'p-1.5 rounded-md transition-all',
+                    viewMode === 'graph'
+                      ? 'bg-ink-800 text-white shadow-sm'
+                      : 'text-ink-500 hover:text-ink-700'
+                  )}
+                  title="图谱视图"
+                >
+                  <GitBranch className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="p-2 bg-gold-100 hover:bg-gold-200 rounded-lg transition-colors"
               >
-                <div className={cn(
-                  'w-12 h-12 rounded-xl overflow-hidden flex-shrink-0',
-                  'transition-transform duration-300 group-hover:scale-105'
-                )}>
-                  <img
-                    src={character.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${character.id}`}
-                    alt={character.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className={cn(
-                    'font-semibold truncate',
-                    selectedCharacter?.id === character.id ? 'text-white' : 'text-ink-800'
-                  )}>
-                    {character.name}
-                  </h3>
-                  <p className={cn(
-                    'text-xs truncate',
-                    selectedCharacter?.id === character.id ? 'text-ink-200' : 'text-ink-400'
-                  )}>
-                    {character.traits.occupation || '未设定职业'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCharacterSpeak(character);
-                    }}
-                    className={cn(
-                      'p-1.5 rounded-lg transition-colors',
-                      selectedCharacter?.id === character.id
-                        ? 'hover:bg-ink-700 text-gold-400'
-                        : 'hover:bg-paper-200 text-ink-500'
-                    )}
-                    title="试听声音"
-                  >
-                    <Volume2 className="w-4 h-4" />
-                  </button>
-                  <div className={cn(
-                    'text-xs px-2 py-1 rounded-full',
-                    selectedCharacter?.id === character.id
-                      ? 'bg-ink-700 text-gold-400'
-                      : 'bg-gold-100 text-gold-700'
-                  )}>
-                    {character.appearances.length}次
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {filteredCharacters.length === 0 && (
-              <div className="text-center py-12">
-                <User className="w-12 h-12 text-ink-300 mx-auto mb-4" />
-                <p className="text-ink-500">
-                  {searchQuery ? '未找到匹配人物' : '暂无人物'}
-                </p>
-              </div>
-            )}
+                <Plus className="w-4 h-4 text-gold-700" />
+              </button>
+            </div>
           </div>
+
+          {viewMode === 'list' && (
+            <>
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input pl-9 py-2"
+                  placeholder="搜索人物..."
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto scrollbar-thin space-y-2">
+                {filteredCharacters.map((character, index) => (
+                  <div
+                    key={character.id}
+                    onClick={() => setSelectedCharacter(character)}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all',
+                      'perspective-1000 group',
+                      selectedCharacter?.id === character.id
+                        ? 'bg-ink-800 text-white'
+                        : 'bg-paper-50 border border-paper-200 hover:border-gold-300 hover:shadow-paper-hover hover:-translate-y-0.5'
+                    )}
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <div className={cn(
+                      'w-12 h-12 rounded-xl overflow-hidden flex-shrink-0',
+                      'transition-transform duration-300 group-hover:scale-105'
+                    )}>
+                      <img
+                        src={character.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${character.id}`}
+                        alt={character.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className={cn(
+                        'font-semibold truncate',
+                        selectedCharacter?.id === character.id ? 'text-white' : 'text-ink-800'
+                      )}>
+                        {character.name}
+                      </h3>
+                      <p className={cn(
+                        'text-xs truncate',
+                        selectedCharacter?.id === character.id ? 'text-ink-200' : 'text-ink-400'
+                      )}>
+                        {character.traits.occupation || '未设定职业'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCharacterSpeak(character);
+                        }}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          selectedCharacter?.id === character.id
+                            ? 'hover:bg-ink-700 text-gold-400'
+                            : 'hover:bg-paper-200 text-ink-500'
+                        )}
+                        title="试听声音"
+                      >
+                        <Volume2 className="w-4 h-4" />
+                      </button>
+                      <div className={cn(
+                        'text-xs px-2 py-1 rounded-full',
+                        selectedCharacter?.id === character.id
+                          ? 'bg-ink-700 text-gold-400'
+                          : 'bg-gold-100 text-gold-700'
+                      )}>
+                        {character.appearances.length}次
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredCharacters.length === 0 && (
+                  <div className="text-center py-12">
+                    <User className="w-12 h-12 text-ink-300 mx-auto mb-4" />
+                    <p className="text-ink-500">
+                      {searchQuery ? '未找到匹配人物' : '暂无人物'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {viewMode === 'graph' && (
+            <div className="flex-1 min-h-0">
+              <CharacterGraphView
+                characters={projectCharacters}
+                onSelectCharacter={setSelectedCharacter}
+                selectedCharacterId={selectedCharacter?.id}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className={cn(
+        'flex-1 transition-all duration-300 overflow-hidden',
+        viewMode === 'graph' ? 'hidden' : ''
+      )}>
         {selectedCharacter ? (
           <div className="card p-6 h-full overflow-y-auto scrollbar-thin">
             <div className="flex items-start justify-between mb-6">

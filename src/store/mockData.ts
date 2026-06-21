@@ -377,6 +377,14 @@ export const mockCharacters: Character[] = [
         type: '上下级',
         description: '舰长对林远十分信任，常采纳他的建议',
       },
+      {
+        id: 'rel-6',
+        characterId: 'char-1',
+        targetId: 'char-4',
+        target: {} as any,
+        type: '敌对',
+        description: '在重大决策上与王磊存在严重分歧，时常爆发争论',
+      },
     ],
     appearances: [
       {
@@ -427,6 +435,22 @@ export const mockCharacters: Character[] = [
         type: '恋人',
         description: '与林远是恋人关系',
       },
+      {
+        id: 'rel-4',
+        characterId: 'char-2',
+        targetId: 'char-3',
+        target: {} as any,
+        type: '上下级',
+        description: '向舰长汇报医疗部门工作',
+      },
+      {
+        id: 'rel-5',
+        characterId: 'char-2',
+        targetId: 'char-4',
+        target: {} as any,
+        type: '朋友',
+        description: '在工作上互相支持，私下关系不错',
+      },
     ],
     appearances: [
       {
@@ -460,7 +484,40 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [],
+    relationships: [
+      {
+        id: 'rel-7',
+        characterId: 'char-3',
+        targetId: 'char-1',
+        target: {} as any,
+        type: '上下级',
+        description: '作为舰长直接管辖林远',
+      },
+      {
+        id: 'rel-8',
+        characterId: 'char-3',
+        targetId: 'char-2',
+        target: {} as any,
+        type: '上下级',
+        description: '作为舰长直接管辖苏婉',
+      },
+      {
+        id: 'rel-9',
+        characterId: 'char-3',
+        targetId: 'char-4',
+        target: {} as any,
+        type: '上下级',
+        description: '舰长与大副的直接从属关系',
+      },
+      {
+        id: 'rel-10',
+        characterId: 'char-3',
+        targetId: 'char-5',
+        target: {} as any,
+        type: '敌对',
+        description: '与神秘文明处于未知的紧张对峙状态',
+      },
+    ],
     appearances: [
       {
         id: 'app-4',
@@ -493,7 +550,32 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [],
+    relationships: [
+      {
+        id: 'rel-11',
+        characterId: 'char-4',
+        targetId: 'char-3',
+        target: {} as any,
+        type: '上下级',
+        description: '作为大副直接向舰长汇报',
+      },
+      {
+        id: 'rel-12',
+        characterId: 'char-4',
+        targetId: 'char-1',
+        target: {} as any,
+        type: '敌对',
+        description: '在探索还是保守的立场上与林远对立',
+      },
+      {
+        id: 'rel-13',
+        characterId: 'char-4',
+        targetId: 'char-2',
+        target: {} as any,
+        type: '朋友',
+        description: '苏婉的老同事，在工作中经常合作',
+      },
+    ],
     appearances: [
       {
         id: 'app-5',
@@ -526,7 +608,24 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [],
+    relationships: [
+      {
+        id: 'rel-14',
+        characterId: 'char-5',
+        targetId: 'char-1',
+        target: {} as any,
+        type: '师徒',
+        description: '神秘文明在远古时期通过基因改造成为人类的"造物主"，与林远有特殊的心灵联系',
+      },
+      {
+        id: 'rel-15',
+        characterId: 'char-5',
+        targetId: 'char-3',
+        target: {} as any,
+        type: '敌对',
+        description: '与人类船员处于未知的对峙状态',
+      },
+    ],
     appearances: [],
     createdAt: new Date('2025-08-20'),
     updatedAt: new Date('2026-06-10'),
@@ -535,7 +634,19 @@ export const mockCharacters: Character[] = [
 
 mockCharacters[0].relationships[0].target = mockCharacters[1];
 mockCharacters[0].relationships[1].target = mockCharacters[2];
+mockCharacters[0].relationships[2].target = mockCharacters[3];
 mockCharacters[1].relationships[0].target = mockCharacters[0];
+mockCharacters[1].relationships[1].target = mockCharacters[2];
+mockCharacters[1].relationships[2].target = mockCharacters[3];
+mockCharacters[2].relationships[0].target = mockCharacters[0];
+mockCharacters[2].relationships[1].target = mockCharacters[1];
+mockCharacters[2].relationships[2].target = mockCharacters[3];
+mockCharacters[2].relationships[3].target = mockCharacters[4];
+mockCharacters[3].relationships[0].target = mockCharacters[2];
+mockCharacters[3].relationships[1].target = mockCharacters[0];
+mockCharacters[3].relationships[2].target = mockCharacters[1];
+mockCharacters[4].relationships[0].target = mockCharacters[0];
+mockCharacters[4].relationships[1].target = mockCharacters[2];
 
 export const mockPlotPoints: PlotPoint[] = [
   {
