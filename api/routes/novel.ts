@@ -10,7 +10,7 @@ import {
   mockConflictWarnings,
   mockStickyNotes,
 } from '../data/mockData.js';
-import type { PdfExportConfig, ConflictWarning, StickyNote } from '../../shared/types.js';
+import type { PdfExportConfig, ConflictWarning, StickyNote, DashboardData } from '../../shared/types.js';
 import { diff_match_patch } from 'diff-match-patch';
 import { jsPDF } from 'jspdf';
 
@@ -506,6 +506,183 @@ router.put('/conflicts/:id/resolve', (req: Request, res: Response) => {
   warning.resolved = true;
   warning.resolvedAt = new Date();
   res.json({ success: true });
+});
+
+// ==================== Dashboard ====================
+
+router.get('/projects/:id/dashboard', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const project = mockProjects.find(p => p.id === projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const chapters = mockChapters.filter(c => c.projectId === projectId);
+  const chapterIds = new Set(chapters.map(c => c.id));
+  const versions = mockChapterVersions.filter(v => chapterIds.has(v.chapterId));
+  const characters = mockCharacters.filter(c => c.projectId === projectId);
+  const plotPoints = mockPlotPoints.filter(p => p.projectId === projectId);
+
+  const totalWords = chapters.reduce((sum, c) => sum + c.wordCount, 0);
+
+  const now = new Date();
+  const monthlyWords: DashboardData['monthlyWords'] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = `${d.getMonth() + 1}月`;
+    let words = 0;
+
+    const versionsInMonth = versions.filter(v => {
+      const vDate = new Date(v.createdAt);
+      return vDate.getFullYear() === d.getFullYear() && vDate.getMonth() === d.getMonth();
+    });
+
+    const chapterSnapshots = new Map<string, { content: string; prevContent: string }>();
+    for (const v of versionsInMonth) {
+      const prevVersions = versions.filter(
+        vv => vv.chapterId === v.chapterId && new Date(vv.createdAt) < new Date(v.createdAt)
+      ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const prevContent = prevVersions.length > 0 ? prevVersions[0].content : '';
+      const existing = chapterSnapshots.get(v.chapterId);
+      if (!existing) {
+        chapterSnapshots.set(v.chapterId, { content: v.content, prevContent });
+      } else {
+        existing.prevContent = existing.content;
+        existing.content = v.content;
+      }
+    }
+
+    for (const [, snap] of chapterSnapshots) {
+      const addedChars = Math.max(0, snap.content.replace(/\s/g, '').length - snap.prevContent.replace(/\s/g, '').length);
+      words += addedChars;
+    }
+
+    monthlyWords.push({ month: label, words });
+  }
+
+  const authorWordMap = new Map<string, number>();
+  for (const chapter of chapters) {
+    const chapterVersions = versions
+      .filter(v => v.chapterId === chapter.id)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    if (chapterVersions.length === 0) {
+      authorWordMap.set(project.creatorId, (authorWordMap.get(project.creatorId) || 0) + chapter.wordCount);
+      continue;
+    }
+
+    for (let i = 0; i < chapterVersions.length; i++) {
+      const v = chapterVersions[i];
+      const prevContent = i === 0 ? '' : chapterVersions[i - 1].content;
+      const addedWords = Math.max(0, v.content.replace(/\s/g, '').length - prevContent.replace(/\s/g, '').length);
+      authorWordMap.set(v.authorId, (authorWordMap.get(v.authorId) || 0) + addedWords);
+    }
+  }
+
+  const totalAuthorWords = Array.from(authorWordMap.values()).reduce((s, w) => s + w, 0);
+  const authorContributions: DashboardData['authorContributions'] = Array.from(authorWordMap.entries())
+    .map(([userId, words]) => {
+      const user = mockUsers.find(u => u.id === userId);
+      return {
+        userId,
+        username: user?.username || '未知作者',
+        avatarUrl: user?.avatarUrl || '',
+        words,
+        percentage: totalAuthorWords > 0 ? Math.round((words / totalAuthorWords) * 1000) / 10 : 0,
+      };
+    })
+    .sort((a, b) => b.words - a.words);
+
+  const heatmapMap = new Map<string, number>();
+  for (const v of versions) {
+    const vDate = new Date(v.createdAt);
+    const day = vDate.getDay();
+    const hour = vDate.getHours();
+    const key = `${day}-${hour}`;
+    heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
+  }
+  for (const c of chapters) {
+    const cDate = new Date(c.updatedAt);
+    const day = cDate.getDay();
+    const hour = cDate.getHours();
+    const key = `${day}-${hour}`;
+    heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
+  }
+  const heatmap: DashboardData['heatmap'] = [];
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      heatmap.push({ day: d, hour: h, count: heatmapMap.get(`${d}-${h}`) || 0 });
+    }
+  }
+
+  const TARGET_WORDS_PER_CHAPTER = 800;
+  const chapterRadars: DashboardData['chapterRadars'] = chapters.map(chapter => {
+    const text = chapter.content;
+    const cleanText = text.replace(/\s/g, '');
+    const completion = Math.min(100, Math.round((chapter.wordCount / TARGET_WORDS_PER_CHAPTER) * 100));
+
+    const relatedPlots = plotPoints.filter(p => p.relatedChapterIds.includes(chapter.id));
+    const resolvedPlots = relatedPlots.filter(p => p.status === 'resolved');
+    const plotProgress = relatedPlots.length > 0
+      ? Math.round((resolvedPlots.length / relatedPlots.length) * 100)
+      : completion > 50 ? 60 : 30;
+
+    const charAppearances = characters.filter(c =>
+      c.appearances.some(a => a.chapterId === chapter.id)
+    );
+    const nameMentions = characters.filter(c => text.includes(c.name));
+    const charDepthScore = charAppearances.length * 15 + nameMentions.length * 10;
+    const characterDepth = Math.min(100, charDepthScore);
+
+    const descriptionPatterns = /[，。]([^""''「」]{10,})[，。]/g;
+    const descMatches = text.match(descriptionPatterns);
+    const descChars = descMatches ? descMatches.join('').replace(/\s/g, '').length : 0;
+    const description = cleanText.length > 0
+      ? Math.min(100, Math.round((descChars / cleanText.length) * 200))
+      : 0;
+
+    const dialogueMatches = text.match(/[""''「」][^""''「」]+[""''「」]/g);
+    const dialogueChars = dialogueMatches ? dialogueMatches.join('').replace(/\s/g, '').length : 0;
+    const dialogue = cleanText.length > 0
+      ? Math.min(100, Math.round((dialogueChars / cleanText.length) * 250))
+      : 0;
+
+    return {
+      chapterId: chapter.id,
+      chapterTitle: chapter.title.replace(/^第.+?章\s*/, ''),
+      completion,
+      plotProgress,
+      characterDepth,
+      description,
+      dialogue,
+    };
+  });
+
+  const uniqueDays = new Set<string>();
+  for (const v of versions) {
+    const d = new Date(v.createdAt);
+    uniqueDays.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  }
+  for (const c of chapters) {
+    const d = new Date(c.updatedAt);
+    uniqueDays.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  }
+  const writingDays = uniqueDays.size || 1;
+
+  const projectAge = Math.max(1, Math.ceil((now.getTime() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
+  const avgWordsPerDay = Math.round(totalWords / projectAge);
+
+  const dashboard: DashboardData = {
+    totalWords,
+    authorCount: authorWordMap.size,
+    avgWordsPerDay,
+    writingDays,
+    monthlyWords,
+    authorContributions,
+    heatmap,
+    chapterRadars,
+  };
+
+  res.json(dashboard);
 });
 
 // ==================== PDF Export ====================

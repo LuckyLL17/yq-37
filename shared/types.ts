@@ -176,3 +176,43 @@ export interface InspirationWall {
   notes: StickyNote[];
   background: 'cork' | 'paper' | 'wood';
 }
+
+export interface DashboardMonthlyWord {
+  month: string;
+  words: number;
+}
+
+export interface DashboardAuthorContribution {
+  userId: string;
+  username: string;
+  avatarUrl: string;
+  words: number;
+  percentage: number;
+}
+
+export interface DashboardHeatmapCell {
+  day: number;
+  hour: number;
+  count: number;
+}
+
+export interface DashboardChapterRadar {
+  chapterId: string;
+  chapterTitle: string;
+  completion: number;
+  plotProgress: number;
+  characterDepth: number;
+  description: number;
+  dialogue: number;
+}
+
+export interface DashboardData {
+  totalWords: number;
+  authorCount: number;
+  avgWordsPerDay: number;
+  writingDays: number;
+  monthlyWords: DashboardMonthlyWord[];
+  authorContributions: DashboardAuthorContribution[];
+  heatmap: DashboardHeatmapCell[];
+  chapterRadars: DashboardChapterRadar[];
+}

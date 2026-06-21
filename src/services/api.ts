@@ -109,4 +109,8 @@ export const api = {
     reorder: (projectId: string, noteIds: string[]) =>
       request<any>(`/projects/${projectId}/notes/reorder`, { method: 'PUT', body: JSON.stringify({ noteIds }) }),
   },
+
+  dashboard: {
+    get: (projectId: string) => request<any>(`/projects/${projectId}/dashboard`),
+  },
 };
