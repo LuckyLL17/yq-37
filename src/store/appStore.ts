@@ -9,7 +9,13 @@ import type {
   ConflictWarning,
   PdfExportConfig,
   StickyNote,
+  BeatCard,
+  ChapterOutline,
+  NarrativeStructureType,
+  StructureTemplate,
+  EmotionPoint,
 } from '@shared/types';
+import { structureTemplates, mockBeats, mockChapterOutlines } from './mockData';
 import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
 
@@ -46,6 +52,9 @@ interface AppState {
   plotPoints: PlotPoint[];
   conflictWarnings: ConflictWarning[];
   stickyNotes: StickyNote[];
+  beats: BeatCard[];
+  chapterOutlines: ChapterOutline[];
+  structureTemplates: StructureTemplate[];
   isLoading: boolean;
   initialized: boolean;
 
@@ -83,6 +92,16 @@ interface AppState {
   updateNotePosition: (noteId: string, data: { positionX: number; positionY: number; zIndex?: number; rotation?: number }) => Promise<void>;
   deleteStickyNote: (noteId: string) => Promise<void>;
   reorderNotes: (projectId: string, noteIds: string[]) => Promise<void>;
+
+  getChapterOutline: (chapterId: string) => ChapterOutline | null;
+  getBeatsForChapter: (chapterId: string) => BeatCard[];
+  createBeat: (chapterId: string, data: Partial<BeatCard>) => Promise<BeatCard>;
+  updateBeat: (beatId: string, data: Partial<BeatCard>) => Promise<void>;
+  deleteBeat: (beatId: string) => Promise<void>;
+  reorderBeats: (chapterId: string, beatIds: string[]) => Promise<void>;
+  applyStructureTemplate: (chapterId: string, structureType: NarrativeStructureType) => Promise<void>;
+  updateOutlineSummary: (chapterId: string, summary: string) => Promise<void>;
+  updateBeatEmotionCurve: (beatId: string, emotionCurve: EmotionPoint[]) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -103,6 +122,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   plotPoints: [],
   conflictWarnings: [],
   stickyNotes: [],
+  beats: [],
+  chapterOutlines: [],
+  structureTemplates: [],
   isLoading: false,
   initialized: false,
 
@@ -134,6 +156,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         plotPoints: reviveDates(plotPoints),
         stickyNotes: reviveDates(stickyNotes),
         conflictWarnings: [],
+        beats: reviveDates(mockBeats),
+        chapterOutlines: reviveDates(mockChapterOutlines),
+        structureTemplates: reviveDates(structureTemplates),
         currentUser: reviveDates(users[0]) || get().currentUser,
         initialized: true,
         isLoading: false,
@@ -644,5 +669,235 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to reorder notes:', e);
     }
+  },
+
+  getChapterOutline: (chapterId: string): ChapterOutline | null => {
+    return get().chapterOutlines.find(o => o.chapterId === chapterId) || null;
+  },
+
+  getBeatsForChapter: (chapterId: string): BeatCard[] => {
+    return get().beats
+      .filter(b => b.chapterId === chapterId)
+      .sort((a, b) => a.order - b.order);
+  },
+
+  createBeat: async (chapterId: string, data: Partial<BeatCard>): Promise<BeatCard> => {
+    const state = get();
+    const chapter = state.chapters.find(c => c.id === chapterId);
+    const existingBeats = state.getBeatsForChapter(chapterId);
+    const newBeat: BeatCard = {
+      id: `beat-${Date.now()}`,
+      chapterId,
+      structureType: data.structureType || 'custom',
+      act: data.act,
+      beatKey: data.beatKey,
+      title: data.title || '新节拍',
+      description: data.description || '',
+      goal: data.goal || '',
+      conflict: data.conflict || '',
+      turningPoint: data.turningPoint || '',
+      emotionCurve: data.emotionCurve || [{ position: 0, intensity: 0.5 }, { position: 1, intensity: 0.5 }],
+      order: existingBeats.length + 1,
+      color: data.color || '#627d98',
+      relatedCharacterIds: data.relatedCharacterIds || [],
+      relatedPlotPointIds: data.relatedPlotPointIds || [],
+      estimatedWords: data.estimatedWords || 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    set(state => ({ beats: [...state.beats, newBeat] }));
+
+    const existingOutline = state.getChapterOutline(chapterId);
+    if (!existingOutline && chapter) {
+      const newOutline: ChapterOutline = {
+        id: `outline-${Date.now()}`,
+        chapterId,
+        projectId: chapter.projectId,
+        structureType: data.structureType || 'custom',
+        beats: [newBeat],
+        summary: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
+    } else if (existingOutline) {
+      set(state => ({
+        chapterOutlines: state.chapterOutlines.map(o =>
+          o.id === existingOutline.id
+            ? { ...o, beats: [...o.beats, newBeat], updatedAt: new Date() }
+            : o
+        ),
+      }));
+    }
+
+    return newBeat;
+  },
+
+  updateBeat: async (beatId: string, data: Partial<BeatCard>) => {
+    set(state => ({
+      beats: state.beats.map(b =>
+        b.id === beatId ? { ...b, ...data, updatedAt: new Date() } : b
+      ),
+      chapterOutlines: state.chapterOutlines.map(o => ({
+        ...o,
+        beats: o.beats.map(b => b.id === beatId ? { ...b, ...data, updatedAt: new Date() } : b),
+        updatedAt: new Date(),
+      })),
+    }));
+  },
+
+  deleteBeat: async (beatId: string) => {
+    const beat = get().beats.find(b => b.id === beatId);
+    if (!beat) return;
+    set(state => ({
+      beats: state.beats.filter(b => b.id !== beatId),
+      chapterOutlines: state.chapterOutlines.map(o => ({
+        ...o,
+        beats: o.beats.filter(b => b.id !== beatId),
+        updatedAt: new Date(),
+      })),
+    }));
+    const chapterBeats = get().getBeatsForChapter(beat.chapterId);
+    chapterBeats.forEach((b, idx) => {
+      if (b.order !== idx + 1) {
+        set(state => ({
+          beats: state.beats.map(x => x.id === b.id ? { ...x, order: idx + 1 } : x),
+        }));
+      }
+    });
+  },
+
+  reorderBeats: async (chapterId: string, beatIds: string[]) => {
+    set(state => ({
+      beats: state.beats.map(b => {
+        const idx = beatIds.indexOf(b.id);
+        if (idx !== -1 && b.chapterId === chapterId) {
+          return { ...b, order: idx + 1, updatedAt: new Date() };
+        }
+        return b;
+      }),
+      chapterOutlines: state.chapterOutlines.map(o =>
+        o.chapterId === chapterId
+          ? {
+              ...o,
+              beats: o.beats
+                .map(b => {
+                  const idx = beatIds.indexOf(b.id);
+                  if (idx !== -1) {
+                    return { ...b, order: idx + 1, updatedAt: new Date() };
+                  }
+                  return b;
+                })
+                .sort((a, b) => a.order - b.order),
+              updatedAt: new Date(),
+            }
+          : o
+      ),
+    }));
+  },
+
+  applyStructureTemplate: async (chapterId: string, structureType: NarrativeStructureType) => {
+    const state = get();
+    const template = state.structureTemplates.find(t => t.type === structureType);
+    if (!template) return;
+
+    const chapter = state.chapters.find(c => c.id === chapterId);
+    if (!chapter) return;
+
+    const existingBeats = state.getBeatsForChapter(chapterId);
+    for (const beat of existingBeats) {
+      await state.deleteBeat(beat.id);
+    }
+
+    let order = 1;
+    const newBeats: BeatCard[] = [];
+    for (const act of template.acts) {
+      for (const beat of act.beats) {
+        const newBeat: BeatCard = {
+          id: `beat-${Date.now()}-${order}`,
+          chapterId,
+          structureType,
+          act: act.key,
+          beatKey: beat.key,
+          title: beat.name,
+          description: beat.description,
+          goal: beat.suggestedGoal,
+          conflict: beat.suggestedConflict,
+          turningPoint: beat.suggestedTurningPoint,
+          emotionCurve: beat.defaultEmotion,
+          order,
+          color: beat.color,
+          relatedCharacterIds: [],
+          relatedPlotPointIds: [],
+          estimatedWords: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        newBeats.push(newBeat);
+        order++;
+      }
+    }
+
+    set(state => ({
+      beats: [...state.beats.filter(b => b.chapterId !== chapterId), ...newBeats],
+    }));
+
+    const existingOutline = state.getChapterOutline(chapterId);
+    if (existingOutline) {
+      set(state => ({
+        chapterOutlines: state.chapterOutlines.map(o =>
+          o.id === existingOutline.id
+            ? { ...o, structureType, beats: newBeats, updatedAt: new Date() }
+            : o
+        ),
+      }));
+    } else {
+      const newOutline: ChapterOutline = {
+        id: `outline-${Date.now()}`,
+        chapterId,
+        projectId: chapter.projectId,
+        structureType,
+        beats: newBeats,
+        summary: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
+    }
+  },
+
+  updateOutlineSummary: async (chapterId: string, summary: string) => {
+    const state = get();
+    const existingOutline = state.getChapterOutline(chapterId);
+    if (existingOutline) {
+      set(state => ({
+        chapterOutlines: state.chapterOutlines.map(o =>
+          o.id === existingOutline.id ? { ...o, summary, updatedAt: new Date() } : o
+        ),
+      }));
+    } else {
+      const chapter = state.chapters.find(c => c.id === chapterId);
+      if (chapter) {
+        const newOutline: ChapterOutline = {
+          id: `outline-${Date.now()}`,
+          chapterId,
+          projectId: chapter.projectId,
+          structureType: 'custom',
+          beats: [],
+          summary,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
+      }
+    }
+  },
+
+  updateBeatEmotionCurve: async (beatId: string, emotionCurve: EmotionPoint[]) => {
+    set(state => ({
+      beats: state.beats.map(b =>
+        b.id === beatId ? { ...b, emotionCurve, updatedAt: new Date() } : b
+      ),
+    }));
   },
 }));

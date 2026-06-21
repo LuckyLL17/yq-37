@@ -225,3 +225,67 @@ export interface DashboardData {
   heatmap: DashboardHeatmapCell[];
   chapterRadars: DashboardChapterRadar[];
 }
+
+export type NarrativeStructureType = 'three-act' | 'hero-journey' | 'save-the-cat' | 'freytag' | 'custom';
+
+export interface EmotionPoint {
+  position: number;
+  intensity: number;
+}
+
+export interface BeatCard {
+  id: string;
+  chapterId: string;
+  structureType: NarrativeStructureType;
+  act?: string;
+  beatKey?: string;
+  title: string;
+  description: string;
+  goal: string;
+  conflict: string;
+  turningPoint: string;
+  emotionCurve: EmotionPoint[];
+  order: number;
+  color: string;
+  relatedCharacterIds: string[];
+  relatedPlotPointIds: string[];
+  estimatedWords: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StructureTemplate {
+  type: NarrativeStructureType;
+  name: string;
+  description: string;
+  acts: StructureAct[];
+}
+
+export interface StructureAct {
+  key: string;
+  name: string;
+  description: string;
+  beats: StructureBeat[];
+}
+
+export interface StructureBeat {
+  key: string;
+  name: string;
+  description: string;
+  suggestedGoal: string;
+  suggestedConflict: string;
+  suggestedTurningPoint: string;
+  defaultEmotion: EmotionPoint[];
+  color: string;
+}
+
+export interface ChapterOutline {
+  id: string;
+  chapterId: string;
+  projectId: string;
+  structureType: NarrativeStructureType;
+  beats: BeatCard[];
+  summary: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

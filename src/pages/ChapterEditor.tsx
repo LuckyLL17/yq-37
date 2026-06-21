@@ -7,7 +7,6 @@ import {
   Save,
   History,
   Plus,
-  ChevronRight,
   AlertTriangle,
   CheckCircle2,
   Info,
@@ -20,11 +19,14 @@ import {
   Play,
   Square,
   ChevronDown,
+  Layers,
+  PenLine,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
 import { speak, stopSpeak, isSpeaking } from '@/lib/tts';
 import type { ConflictWarning, Character } from '@shared/types';
+import ChapterOutline from '@/components/ChapterOutline';
 
 export default function ChapterEditor() {
   const { projectId, chapterId } = useParams<{ projectId: string; chapterId: string }>();
@@ -69,6 +71,7 @@ export default function ChapterEditor() {
   const [isCurrentlySpeaking, setIsCurrentlySpeaking] = useState(false);
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
   const [speakingCharacterName, setSpeakingCharacterName] = useState<string>('');
+  const [editorMode, setEditorMode] = useState<'writing' | 'outline'>('writing');
 
   const projectCharacters = characters.filter(c => c.projectId === projectId);
   const projectChapters = chapters.filter(c => c.projectId === projectId);
@@ -392,29 +395,62 @@ export default function ChapterEditor() {
                   )}
                 </div>
               </div>
+
+              <div className="flex gap-2 mt-4 pt-4 border-t border-paper-200">
+                <button
+                  onClick={() => setEditorMode('writing')}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    editorMode === 'writing'
+                      ? 'bg-ink-800 text-white shadow-ink'
+                      : 'bg-paper-100 text-ink-600 hover:bg-paper-200'
+                  )}
+                >
+                  <PenLine className="w-4 h-4" />
+                  内容编辑
+                </button>
+                <button
+                  onClick={() => setEditorMode('outline')}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    editorMode === 'outline'
+                      ? 'bg-gradient-gold text-ink-900 shadow-gold'
+                      : 'bg-paper-100 text-ink-600 hover:bg-paper-200'
+                  )}
+                >
+                  <Layers className="w-4 h-4" />
+                  大纲规划
+                </button>
+              </div>
             </div>
 
-            <div className="card flex-1 flex flex-col overflow-hidden relative">
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={(e) => {
-                  handleContentChange(e.target.value);
-                }}
-                onSelect={handleTextSelection}
-                onKeyUp={handleTextSelection}
-                onMouseUp={handleTextSelection}
-                disabled={!isLockedByMe}
-                placeholder={isLockedByMe ? '开始创作...\n\n小提示：选中文字后可以选择人物进行朗读！' : '章节已被锁定，无法编辑'}
-                className={cn(
-                  'flex-1 w-full p-8 resize-none bg-paper-50/50 paper-bg font-serif text-lg leading-8 text-ink-800',
-                  'outline-none border-none scrollbar-thin',
-                  !isLockedByMe && 'cursor-not-allowed opacity-60',
-                  isLockedByMe && 'animate-pulse-gold'
-                )}
-                spellCheck={false}
-              />
-            </div>
+            {editorMode === 'writing' ? (
+              <div className="card flex-1 flex flex-col overflow-hidden relative">
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={(e) => {
+                    handleContentChange(e.target.value);
+                  }}
+                  onSelect={handleTextSelection}
+                  onKeyUp={handleTextSelection}
+                  onMouseUp={handleTextSelection}
+                  disabled={!isLockedByMe}
+                  placeholder={isLockedByMe ? '开始创作...\n\n小提示：选中文字后可以选择人物进行朗读！' : '章节已被锁定，无法编辑'}
+                  className={cn(
+                    'flex-1 w-full p-8 resize-none bg-paper-50/50 paper-bg font-serif text-lg leading-8 text-ink-800',
+                    'outline-none border-none scrollbar-thin',
+                    !isLockedByMe && 'cursor-not-allowed opacity-60',
+                    isLockedByMe && 'animate-pulse-gold'
+                  )}
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ChapterOutline chapterId={currentChapter.id} projectId={projectId!} />
+              </div>
+            )}
           </>
         ) : (
           <div className="card flex-1 flex items-center justify-center">
