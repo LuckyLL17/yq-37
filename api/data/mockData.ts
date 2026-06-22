@@ -10,6 +10,7 @@ import type {
   StickyNote,
   ChapterBranch,
   BranchVersion,
+  NoteConnection,
 } from '../../shared/types.js';
 
 export const mockUsers: User[] = [
@@ -679,6 +680,69 @@ export const mockConflictWarnings: ConflictWarning[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
     resolved: true,
     resolvedAt: new Date(Date.now() - 1000 * 60 * 60),
+  },
+];
+
+export const mockNoteConnections: NoteConnection[] = [
+  {
+    id: 'conn-1',
+    projectId: 'project-1',
+    sourceNoteId: 'note-1',
+    targetNoteId: 'note-5',
+    type: 'causal',
+    label: '引出',
+    description: '林远发现的符号坐标引出第三章结尾的记忆闪回场景',
+    color: '#d97706',
+    createdAt: new Date('2026-06-10'),
+    updatedAt: new Date('2026-06-15'),
+  },
+  {
+    id: 'conn-2',
+    projectId: 'project-1',
+    sourceNoteId: 'note-2',
+    targetNoteId: 'note-7',
+    type: 'reference',
+    label: '呼应',
+    description: '苏婉的外星药物与新角色AI守护者可能有关联',
+    color: '#dc2626',
+    createdAt: new Date('2026-06-12'),
+    updatedAt: new Date('2026-06-14'),
+  },
+  {
+    id: 'conn-3',
+    projectId: 'project-1',
+    sourceNoteId: 'note-3',
+    targetNoteId: 'note-5',
+    type: 'extension',
+    label: '延伸',
+    description: '陈舰长的秘密背景可以延伸到第三章的决策场景',
+    color: '#2563eb',
+    createdAt: new Date('2026-06-13'),
+    updatedAt: new Date('2026-06-13'),
+  },
+  {
+    id: 'conn-4',
+    projectId: 'project-1',
+    sourceNoteId: 'note-6',
+    targetNoteId: 'note-8',
+    type: 'inspiration',
+    label: '启发',
+    description: '神秘文明的进化设定启发了小说结尾的主题表达',
+    color: '#7c3aed',
+    createdAt: new Date('2026-06-14'),
+    updatedAt: new Date('2026-06-15'),
+  },
+  {
+    id: 'conn-5',
+    projectId: 'project-1',
+    sourceNoteId: 'note-1',
+    targetNoteId: 'note-6',
+    type: 'reference',
+    label: '关联',
+    description: '星际坐标与神秘文明的世界观设定直接相关',
+    color: '#059669',
+    createdAt: new Date('2026-06-15'),
+    updatedAt: new Date('2026-06-15'),
   },
 ];
 

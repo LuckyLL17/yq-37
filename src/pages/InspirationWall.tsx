@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Plus, Filter, X, Lightbulb, Search, Grid3X3, List } from 'lucide-react';
+import { Plus, Filter, X, Lightbulb, Search, Grid3X3, List, Link, Zap, Eye, EyeOff } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import StickyNoteComponent from '@/components/StickyNote';
-import type { StickyNote, StickyNoteColor } from '@shared/types';
+import NoteConnectionLayer from '@/components/NoteConnectionLayer';
+import NoteConnectionModal from '@/components/NoteConnectionModal';
+import type { StickyNote, StickyNoteColor, NoteConnection, NoteConnectionRecommendation, NoteConnectionType } from '@shared/types';
 import { cn } from '@/lib/utils';
 
 const colorConfig: Record<StickyNoteColor, { bg: string; name: string }> = {
@@ -19,7 +21,22 @@ const colorOptions: StickyNoteColor[] = ['yellow', 'pink', 'blue', 'green', 'ora
 
 export default function InspirationWall() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { currentProject, stickyNotes, createStickyNote, updateStickyNote, updateNotePosition, deleteStickyNote, reorderNotes } = useAppStore();
+  const { 
+    currentProject, 
+    stickyNotes, 
+    noteConnections,
+    connectionRecommendations,
+    createStickyNote, 
+    updateStickyNote, 
+    updateNotePosition, 
+    deleteStickyNote, 
+    reorderNotes,
+    loadNoteConnections,
+    createNoteConnection,
+    updateNoteConnection,
+    deleteNoteConnection,
+    loadConnectionRecommendations,
+  } = useAppStore();
   const wallRef = useRef<HTMLDivElement>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<StickyNoteColor | null>(null);
@@ -28,6 +45,22 @@ export default function InspirationWall() {
   const [showFilters, setShowFilters] = useState(false);
   const [notePositions, setNotePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [viewMode, setViewMode] = useState<'wall' | 'list'>('wall');
+  const [isConnectionMode, setIsConnectionMode] = useState(false);
+  const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [editingConnection, setEditingConnection] = useState<NoteConnection | null>(null);
+  const [tempConnection, setTempConnection] = useState<{
+    sourceNoteId: string;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const [showRecommendations, setShowRecommendations] = useState(true);
+  const [dismissedRecommendations, setDismissedRecommendations] = useState<Set<string>>(new Set());
+  const [pendingConnection, setPendingConnection] = useState<{
+    sourceNoteId: string;
+    targetNoteId: string;
+  } | null>(null);
 
   const projectNotes = useMemo(() => {
     if (!projectId) return [];
@@ -61,6 +94,32 @@ export default function InspirationWall() {
 
     return notes.sort((a, b) => a.zIndex - b.zIndex);
   }, [projectNotes, selectedColor, selectedTags, searchText]);
+
+  const projectConnections = useMemo(() => {
+    if (!projectId) return [];
+    return noteConnections.filter(c => c.projectId === projectId);
+  }, [noteConnections, projectId]);
+
+  const filteredRecommendations = useMemo(() => {
+    return connectionRecommendations.filter(rec => 
+      !dismissedRecommendations.has(`${rec.sourceNoteId}-${rec.targetNoteId}`)
+    );
+  }, [connectionRecommendations, dismissedRecommendations]);
+
+  const notesWithConnections = useMemo(() => {
+    const ids = new Set<string>();
+    projectConnections.forEach(c => {
+      ids.add(c.sourceNoteId);
+      ids.add(c.targetNoteId);
+    });
+    return ids;
+  }, [projectConnections]);
+
+  const getNoteConnectionCount = useCallback((noteId: string) => {
+    return projectConnections.filter(c => 
+      c.sourceNoteId === noteId || c.targetNoteId === noteId
+    ).length;
+  }, [projectConnections]);
 
   useEffect(() => {
     const positions: Record<string, { x: number; y: number }> = {};
@@ -146,6 +205,181 @@ export default function InspirationWall() {
     setSearchText('');
   };
 
+  const handleStartConnection = useCallback((noteId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const wallRect = wallRef.current?.getBoundingClientRect();
+    if (!wallRect) return;
+    
+    const scrollLeft = wallRef.current?.scrollLeft || 0;
+    const scrollTop = wallRef.current?.scrollTop || 0;
+    
+    const startX = e.clientX - wallRect.left + scrollLeft;
+    const startY = e.clientY - wallRect.top + scrollTop;
+    
+    setTempConnection({
+      sourceNoteId: noteId,
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+    });
+    setIsConnectionMode(true);
+  }, []);
+
+  const handleConnectionMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!tempConnection || !wallRef.current) return;
+    
+    const wallRect = wallRef.current.getBoundingClientRect();
+    const scrollLeft = wallRef.current.scrollLeft;
+    const scrollTop = wallRef.current.scrollTop;
+    
+    const currentX = e.clientX - wallRect.left + scrollLeft;
+    const currentY = e.clientY - wallRect.top + scrollTop;
+    
+    setTempConnection(prev => prev ? {
+      ...prev,
+      currentX,
+      currentY,
+    } : null);
+  }, [tempConnection]);
+
+  const handleConnectionMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!tempConnection || !wallRef.current) return;
+    
+    const wallRect = wallRef.current.getBoundingClientRect();
+    const scrollLeft = wallRef.current.scrollLeft;
+    const scrollTop = wallRef.current.scrollTop;
+    
+    const mouseX = e.clientX - wallRect.left + scrollLeft;
+    const mouseY = e.clientY - wallRect.top + scrollTop;
+    
+    let targetNoteId: string | null = null;
+    
+    for (const note of projectNotes) {
+      const pos = notePositions[note.id] || { x: note.positionX, y: note.positionY };
+      if (
+        mouseX >= pos.x &&
+        mouseX <= pos.x + note.width &&
+        mouseY >= pos.y &&
+        mouseY <= pos.y + note.height &&
+        note.id !== tempConnection.sourceNoteId
+      ) {
+        targetNoteId = note.id;
+        break;
+      }
+    }
+    
+    if (targetNoteId) {
+      const exists = projectConnections.some(c =>
+        (c.sourceNoteId === tempConnection.sourceNoteId && c.targetNoteId === targetNoteId) ||
+        (c.sourceNoteId === targetNoteId && c.targetNoteId === tempConnection.sourceNoteId)
+      );
+      
+      if (!exists) {
+        setPendingConnection({
+          sourceNoteId: tempConnection.sourceNoteId,
+          targetNoteId,
+        });
+        setShowConnectionModal(true);
+      }
+    }
+    
+    setTempConnection(null);
+    setIsConnectionMode(false);
+  }, [tempConnection, projectNotes, notePositions, projectConnections]);
+
+  const handleConnectionClick = useCallback((connection: NoteConnection) => {
+    setEditingConnection(connection);
+    setShowConnectionModal(true);
+  }, []);
+
+  const handleConnectionDelete = useCallback(async (connectionId: string) => {
+    if (window.confirm('确定要删除这条关联线吗？')) {
+      await deleteNoteConnection(connectionId);
+    }
+  }, [deleteNoteConnection]);
+
+  const handleSaveConnection = useCallback(async (data: {
+    sourceNoteId: string;
+    targetNoteId: string;
+    type: NoteConnectionType;
+    label?: string;
+    description?: string;
+    color?: string;
+  }) => {
+    if (!projectId) return;
+    
+    if (editingConnection) {
+      await updateNoteConnection(editingConnection.id, {
+        type: data.type,
+        label: data.label,
+        description: data.description,
+        color: data.color,
+      });
+    } else {
+      await createNoteConnection(projectId, data);
+      if (showRecommendations) {
+        await loadConnectionRecommendations(projectId);
+      }
+    }
+    
+    setShowConnectionModal(false);
+    setEditingConnection(null);
+    setPendingConnection(null);
+  }, [projectId, editingConnection, updateNoteConnection, createNoteConnection, showRecommendations, loadConnectionRecommendations]);
+
+  const handleCloseModal = useCallback(() => {
+    setShowConnectionModal(false);
+    setEditingConnection(null);
+    setPendingConnection(null);
+  }, []);
+
+  const handleAcceptRecommendation = useCallback(async (recommendation: NoteConnectionRecommendation) => {
+    if (!projectId) return;
+    
+    await createNoteConnection(projectId, {
+      sourceNoteId: recommendation.sourceNoteId,
+      targetNoteId: recommendation.targetNoteId,
+      type: recommendation.suggestedType,
+      label: recommendation.commonTags[0] || undefined,
+      description: recommendation.reason,
+    });
+    
+    await loadConnectionRecommendations(projectId);
+  }, [projectId, createNoteConnection, loadConnectionRecommendations]);
+
+  const handleDismissRecommendation = useCallback((recommendation: NoteConnectionRecommendation) => {
+    setDismissedRecommendations(prev => {
+      const next = new Set(prev);
+      next.add(`${recommendation.sourceNoteId}-${recommendation.targetNoteId}`);
+      return next;
+    });
+  }, []);
+
+  const toggleConnectionMode = useCallback(() => {
+    setIsConnectionMode(prev => !prev);
+    if (tempConnection) {
+      setTempConnection(null);
+    }
+  }, [tempConnection]);
+
+  const toggleShowRecommendations = useCallback(async () => {
+    const newValue = !showRecommendations;
+    setShowRecommendations(newValue);
+    
+    if (newValue && projectId && connectionRecommendations.length === 0) {
+      await loadConnectionRecommendations(projectId);
+    }
+  }, [showRecommendations, projectId, connectionRecommendations.length, loadConnectionRecommendations]);
+
+  const refreshRecommendations = useCallback(async () => {
+    if (!projectId) return;
+    setDismissedRecommendations(new Set());
+    await loadConnectionRecommendations(projectId);
+  }, [projectId, loadConnectionRecommendations]);
+
   const getNoteWithPosition = (note: StickyNote) => {
     const pos = notePositions[note.id] || { x: note.positionX, y: note.positionY };
     return { ...note, positionX: pos.x, positionY: pos.y };
@@ -193,6 +427,58 @@ export default function InspirationWall() {
               <List className="w-4 h-4" />
             </button>
           </div>
+
+          {viewMode === 'wall' && (
+            <>
+              <button
+                onClick={toggleConnectionMode}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all',
+                  isConnectionMode
+                    ? 'bg-blue-100 border-blue-400 text-blue-700'
+                    : 'bg-white border-paper-300 text-ink-600 hover:border-blue-400'
+                )}
+                title="关联线模式"
+              >
+                <Link className="w-4 h-4" />
+                <span className="text-sm">连线</span>
+                {projectConnections.length > 0 && (
+                  <span className="w-5 h-5 bg-gold-500 text-white rounded-full text-xs flex items-center justify-center">
+                    {projectConnections.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={toggleShowRecommendations}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all',
+                  showRecommendations
+                    ? 'bg-green-100 border-green-400 text-green-700'
+                    : 'bg-white border-paper-300 text-ink-600 hover:border-green-400'
+                )}
+                title="智能推荐"
+              >
+                {showRecommendations ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                <span className="text-sm">推荐</span>
+                {showRecommendations && filteredRecommendations.length > 0 && (
+                  <span className="w-5 h-5 bg-green-500 text-white rounded-full text-xs flex items-center justify-center">
+                    {filteredRecommendations.length}
+                  </span>
+                )}
+              </button>
+
+              {showRecommendations && filteredRecommendations.length > 0 && (
+                <button
+                  onClick={refreshRecommendations}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-paper-300 bg-white text-ink-600 hover:border-gold-400 transition-all"
+                  title="刷新推荐"
+                >
+                  <Zap className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          )}
 
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -313,7 +599,8 @@ export default function InspirationWall() {
           ref={wallRef}
           className={cn(
             'flex-1 relative overflow-auto rounded-xl border',
-            'min-h-[600px]'
+            'min-h-[600px]',
+            isConnectionMode && 'cursor-crosshair'
           )}
           style={{
             background: `
@@ -337,6 +624,9 @@ export default function InspirationWall() {
             borderColor: '#a67c52',
             boxShadow: 'inset 0 0 100px rgba(0, 0, 0, 0.1)',
           }}
+          onMouseMove={tempConnection ? handleConnectionMouseMove : undefined}
+          onMouseUp={tempConnection ? handleConnectionMouseUp : undefined}
+          onMouseLeave={tempConnection ? handleConnectionMouseUp : undefined}
         >
           <div
             className="absolute inset-0 opacity-20 pointer-events-none"
@@ -351,6 +641,12 @@ export default function InspirationWall() {
               background: 'linear-gradient(to bottom, rgba(0,0,0,0.15), transparent)',
             }}
           />
+
+          {isConnectionMode && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-pulse">
+              🎯 拖拽便签边缘的蓝色圆点到另一个便签，创建关联线
+            </div>
+          )}
 
           {filteredNotes.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -373,6 +669,19 @@ export default function InspirationWall() {
             </div>
           ) : (
             <div className="relative w-full h-full" style={{ minHeight: '800px', minWidth: '1200px' }}>
+              <NoteConnectionLayer
+                notes={projectNotes}
+                connections={projectConnections}
+                recommendations={filteredRecommendations}
+                notePositions={notePositions}
+                tempConnection={tempConnection}
+                showRecommendations={showRecommendations}
+                onConnectionClick={handleConnectionClick}
+                onConnectionDelete={handleConnectionDelete}
+                onRecommendationAccept={handleAcceptRecommendation}
+                onRecommendationDismiss={handleDismissRecommendation}
+              />
+
               {filteredNotes.map((note) => (
                 <StickyNoteComponent
                   key={note.id}
@@ -384,6 +693,10 @@ export default function InspirationWall() {
                   onDelete={handleDeleteNote}
                   onBringToFront={handleBringToFront}
                   isDragging={draggingNoteId === note.id}
+                  onStartConnection={handleStartConnection}
+                  isConnectionMode={isConnectionMode}
+                  isConnectionTarget={tempConnection !== null && tempConnection.sourceNoteId !== note.id}
+                  hasConnections={notesWithConnections.has(note.id)}
                 />
               ))}
             </div>
@@ -435,8 +748,20 @@ export default function InspirationWall() {
       )}
 
       <div className="mt-4 text-center text-xs text-ink-400">
-        💡 提示：拖拽便签可以移动位置，点击悬浮按钮可以编辑、更换颜色或添加标签
+        💡 提示：拖拽便签可以移动位置，点击悬浮按钮可以编辑、更换颜色或添加标签 | 
+        🔗 点击「连线」按钮拖拽便签边缘圆点创建关联线 | 
+        🤖 点击「推荐」查看AI智能推荐的便签关联
       </div>
+
+      <NoteConnectionModal
+        isOpen={showConnectionModal}
+        connection={editingConnection}
+        sourceNoteId={pendingConnection?.sourceNoteId}
+        targetNoteId={pendingConnection?.targetNoteId}
+        notes={projectNotes.map(n => ({ id: n.id, content: n.content }))}
+        onClose={handleCloseModal}
+        onSave={handleSaveConnection}
+      />
     </div>
   );
 }

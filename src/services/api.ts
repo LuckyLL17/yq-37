@@ -136,4 +136,28 @@ export const api = {
     diff: (branchAId: string, branchBId: string) =>
       request<any>(`/branches/diff?branchAId=${branchAId}&branchBId=${branchBId}`),
   },
+
+  connections: {
+    list: (projectId: string) => request<any[]>(`/projects/${projectId}/connections`),
+    create: (projectId: string, data: {
+      sourceNoteId: string;
+      targetNoteId: string;
+      type?: string;
+      label?: string;
+      description?: string;
+      color?: string;
+    }) =>
+      request<any>(`/projects/${projectId}/connections`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (connectionId: string, data: {
+      type?: string;
+      label?: string;
+      description?: string;
+      color?: string;
+    }) =>
+      request<any>(`/connections/${connectionId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (connectionId: string) =>
+      request<{ success: boolean }>(`/connections/${connectionId}`, { method: 'DELETE' }),
+    getRecommendations: (projectId: string, threshold?: number) =>
+      request<any[]>(`/projects/${projectId}/connections/recommendations${threshold !== undefined ? `?threshold=${threshold}` : ''}`),
+  },
 };

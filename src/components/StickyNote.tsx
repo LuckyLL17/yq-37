@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Edit3, Palette, Tag, Check } from 'lucide-react';
+import { X, Edit3, Palette, Tag, Check, Link } from 'lucide-react';
 import { StickyNote, StickyNoteColor } from '@shared/types';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,10 @@ interface StickyNoteProps {
   onDelete: (noteId: string) => void;
   onBringToFront: (noteId: string) => void;
   isDragging: boolean;
+  onStartConnection?: (noteId: string, e: React.MouseEvent) => void;
+  isConnectionMode?: boolean;
+  isConnectionTarget?: boolean;
+  hasConnections?: boolean;
 }
 
 const colorConfig: Record<StickyNoteColor, { bg: string; border: string; text: string; tape: string }> = {
@@ -64,6 +68,10 @@ export default function StickyNoteComponent({
   onDelete,
   onBringToFront,
   isDragging,
+  onStartConnection,
+  isConnectionMode = false,
+  isConnectionTarget = false,
+  hasConnections = false,
 }: StickyNoteProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -107,6 +115,7 @@ export default function StickyNoteComponent({
     if (isEditing) return true;
     if (target.closest('.note-controls')) return true;
     if (target.closest('.note-popup')) return true;
+    if (target.closest('.note-connection-point')) return true;
     if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.tagName === 'BUTTON') return true;
     return false;
   };
@@ -219,7 +228,9 @@ export default function StickyNoteComponent({
       className={cn(
         'absolute cursor-grab select-none group',
         'transition-transform duration-75',
-        isDragging && 'cursor-grabbing z-50'
+        isDragging && 'cursor-grabbing z-50',
+        isConnectionMode && 'ring-2 ring-blue-400 ring-offset-2 ring-offset-transparent rounded-sm',
+        isConnectionTarget && 'ring-2 ring-green-400 ring-offset-2 ring-offset-transparent rounded-sm scale-105'
       )}
       style={{
         left: note.positionX,
@@ -468,6 +479,86 @@ export default function StickyNoteComponent({
           }}
         />
       </div>
+
+      {(isConnectionMode || hasConnections) && (
+        <>
+          <div
+            className={cn(
+              'note-connection-point absolute -left-2 top-1/2 -translate-y-1/2',
+              'w-5 h-5 rounded-full bg-white border-2 border-gray-300',
+              'flex items-center justify-center cursor-crosshair',
+              'opacity-0 group-hover:opacity-100 transition-all duration-200',
+              'hover:border-blue-500 hover:bg-blue-50 hover:scale-110',
+              isConnectionMode && 'opacity-100 border-blue-400 bg-blue-50 animate-pulse'
+            )}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onStartConnection?.(note.id, e);
+            }}
+            title="拖拽创建关联线"
+          >
+            <Link className="w-3 h-3 text-gray-500" />
+          </div>
+
+          <div
+            className={cn(
+              'note-connection-point absolute -right-2 top-1/2 -translate-y-1/2',
+              'w-5 h-5 rounded-full bg-white border-2 border-gray-300',
+              'flex items-center justify-center cursor-crosshair',
+              'opacity-0 group-hover:opacity-100 transition-all duration-200',
+              'hover:border-blue-500 hover:bg-blue-50 hover:scale-110',
+              isConnectionMode && 'opacity-100 border-blue-400 bg-blue-50 animate-pulse'
+            )}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onStartConnection?.(note.id, e);
+            }}
+            title="拖拽创建关联线"
+          >
+            <Link className="w-3 h-3 text-gray-500" />
+          </div>
+
+          <div
+            className={cn(
+              'note-connection-point absolute left-1/2 -translate-x-1/2 -top-2',
+              'w-5 h-5 rounded-full bg-white border-2 border-gray-300',
+              'flex items-center justify-center cursor-crosshair',
+              'opacity-0 group-hover:opacity-100 transition-all duration-200',
+              'hover:border-blue-500 hover:bg-blue-50 hover:scale-110',
+              isConnectionMode && 'opacity-100 border-blue-400 bg-blue-50 animate-pulse'
+            )}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onStartConnection?.(note.id, e);
+            }}
+            title="拖拽创建关联线"
+          >
+            <Link className="w-3 h-3 text-gray-500" />
+          </div>
+
+          <div
+            className={cn(
+              'note-connection-point absolute left-1/2 -translate-x-1/2 -bottom-2',
+              'w-5 h-5 rounded-full bg-white border-2 border-gray-300',
+              'flex items-center justify-center cursor-crosshair',
+              'opacity-0 group-hover:opacity-100 transition-all duration-200',
+              'hover:border-blue-500 hover:bg-blue-50 hover:scale-110',
+              isConnectionMode && 'opacity-100 border-blue-400 bg-blue-50 animate-pulse'
+            )}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onStartConnection?.(note.id, e);
+            }}
+            title="拖拽创建关联线"
+          >
+            <Link className="w-3 h-3 text-gray-500" />
+          </div>
+        </>
+      )}
 
       <div
         className="absolute inset-0 -z-10 opacity-30 pointer-events-none"

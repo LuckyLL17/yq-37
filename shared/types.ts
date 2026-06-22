@@ -179,6 +179,30 @@ export interface StickyNote {
   updatedAt: Date;
 }
 
+export type NoteConnectionType = 'causal' | 'reference' | 'extension' | 'contrast' | 'inspiration' | 'other';
+
+export interface NoteConnection {
+  id: string;
+  projectId: string;
+  sourceNoteId: string;
+  targetNoteId: string;
+  type: NoteConnectionType;
+  label?: string;
+  description?: string;
+  color?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NoteConnectionRecommendation {
+  sourceNoteId: string;
+  targetNoteId: string;
+  similarity: number;
+  commonTags: string[];
+  suggestedType: NoteConnectionType;
+  reason: string;
+}
+
 export interface InspirationWall {
   id: string;
   projectId: string;

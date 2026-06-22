@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import {
   mockUsers,
   mockProjects,
+  mockProjectMembers,
   mockChapters,
   mockChapterVersions,
   mockCharacters,
@@ -11,6 +12,7 @@ import {
   mockStickyNotes,
   mockChapterBranches,
   mockBranchVersions,
+  mockNoteConnections,
 } from '../data/mockData.js';
 import type {
   PdfExportConfig,
@@ -20,6 +22,8 @@ import type {
   BranchVersion,
   ConflictBlock,
   BranchStatus,
+  NoteConnection,
+  NoteConnectionType,
 } from '../../shared/types.js';
 import { diff_match_patch } from 'diff-match-patch';
 import { jsPDF } from 'jspdf';
@@ -713,6 +717,168 @@ router.put('/projects/:id/notes/reorder', (req: Request, res: Response) => {
   });
 
   res.json({ success: true });
+});
+
+// ==================== Note Connections CRUD ====================
+
+const calculateTagSimilarity = (tagsA: string[], tagsB: string[]): { similarity: number; commonTags: string[] } => {
+  if (tagsA.length === 0 || tagsB.length === 0) return { similarity: 0, commonTags: [] };
+  
+  const setA = new Set(tagsA.map(t => t.toLowerCase()));
+  const setB = new Set(tagsB.map(t => t.toLowerCase()));
+  
+  const intersection = [...setA].filter(x => setB.has(x));
+  const union = [...new Set([...setA, ...setB])];
+  
+  const similarity = union.length === 0 ? 0 : intersection.length / union.length;
+  return { similarity, commonTags: intersection };
+};
+
+const suggestConnectionType = (commonTags: string[], noteA: StickyNote, noteB: StickyNote): NoteConnectionType => {
+  const causalTags = ['伏笔', '引出', '因果', '原因', '结果'];
+  const referenceTags = ['呼应', '关联', '对应', 'reference'];
+  const extensionTags = ['延伸', '扩展', '补充', 'extension'];
+  const contrastTags = ['对比', '反差', '冲突', 'contrast'];
+  const inspirationTags = ['启发', '灵感', '来源', 'inspiration'];
+  
+  const hasTag = (tags: string[]) => commonTags.some(ct => tags.some(t => ct.includes(t.toLowerCase())));
+  
+  if (hasTag(causalTags)) return 'causal';
+  if (hasTag(referenceTags)) return 'reference';
+  if (hasTag(extensionTags)) return 'extension';
+  if (hasTag(contrastTags)) return 'contrast';
+  if (hasTag(inspirationTags)) return 'inspiration';
+  return 'other';
+};
+
+router.get('/projects/:id/connections', (req: Request, res: Response) => {
+  const connections = mockNoteConnections.filter(c => c.projectId === req.params.id);
+  res.json(connections);
+});
+
+router.post('/projects/:id/connections', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const { sourceNoteId, targetNoteId, type, label, description, color } = req.body;
+  
+  if (!sourceNoteId || !targetNoteId) {
+    return res.status(400).json({ error: 'sourceNoteId and targetNoteId are required' });
+  }
+  
+  if (sourceNoteId === targetNoteId) {
+    return res.status(400).json({ error: 'Cannot connect a note to itself' });
+  }
+  
+  const exists = mockNoteConnections.find(c => 
+    c.projectId === projectId && 
+    ((c.sourceNoteId === sourceNoteId && c.targetNoteId === targetNoteId) ||
+     (c.sourceNoteId === targetNoteId && c.targetNoteId === sourceNoteId))
+  );
+  
+  if (exists) {
+    return res.status(409).json({ error: 'Connection already exists between these notes' });
+  }
+  
+  const defaultColors: Record<NoteConnectionType, string> = {
+    causal: '#d97706',
+    reference: '#dc2626',
+    extension: '#2563eb',
+    contrast: '#7c3aed',
+    inspiration: '#059669',
+    other: '#6b7280',
+  };
+  
+  const newConnection: NoteConnection = {
+    id: `conn-${Date.now()}`,
+    projectId,
+    sourceNoteId,
+    targetNoteId,
+    type: type || 'other',
+    label,
+    description,
+    color: color || defaultColors[type || 'other'],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  
+  mockNoteConnections.push(newConnection);
+  res.status(201).json(newConnection);
+});
+
+router.put('/connections/:id', (req: Request, res: Response) => {
+  const index = mockNoteConnections.findIndex(c => c.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Connection not found' });
+  
+  const { type, label, description, color } = req.body;
+  
+  mockNoteConnections[index] = {
+    ...mockNoteConnections[index],
+    ...(type !== undefined && { type }),
+    ...(label !== undefined && { label }),
+    ...(description !== undefined && { description }),
+    ...(color !== undefined && { color }),
+    updatedAt: new Date(),
+  };
+  
+  res.json(mockNoteConnections[index]);
+});
+
+router.delete('/connections/:id', (req: Request, res: Response) => {
+  const index = mockNoteConnections.findIndex(c => c.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Connection not found' });
+  
+  mockNoteConnections.splice(index, 1);
+  res.json({ success: true });
+});
+
+router.get('/projects/:id/connections/recommendations', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const { threshold = '0.2' } = req.query;
+  const similarityThreshold = parseFloat(threshold as string);
+  
+  const projectNotes = mockStickyNotes.filter(n => n.projectId === projectId);
+  const existingConnections = mockNoteConnections.filter(c => c.projectId === projectId);
+  
+  const existingPairs = new Set<string>();
+  existingConnections.forEach(c => {
+    existingPairs.add(`${c.sourceNoteId}-${c.targetNoteId}`);
+    existingPairs.add(`${c.targetNoteId}-${c.sourceNoteId}`);
+  });
+  
+  const recommendations: any[] = [];
+  
+  for (let i = 0; i < projectNotes.length; i++) {
+    for (let j = i + 1; j < projectNotes.length; j++) {
+      const noteA = projectNotes[i];
+      const noteB = projectNotes[j];
+      
+      if (existingPairs.has(`${noteA.id}-${noteB.id}`)) continue;
+      
+      const { similarity, commonTags } = calculateTagSimilarity(noteA.tags, noteB.tags);
+      
+      if (similarity >= similarityThreshold) {
+        const suggestedType = suggestConnectionType(commonTags, noteA, noteB);
+        
+        let reason = '';
+        if (commonTags.length > 0) {
+          reason = `共同标签：${commonTags.join('、')}`;
+        } else {
+          reason = '内容主题相关';
+        }
+        
+        recommendations.push({
+          sourceNoteId: noteA.id,
+          targetNoteId: noteB.id,
+          similarity,
+          commonTags,
+          suggestedType,
+          reason,
+        });
+      }
+    }
+  }
+  
+  recommendations.sort((a, b) => b.similarity - a.similarity);
+  res.json(recommendations);
 });
 
 // ==================== Branches ====================

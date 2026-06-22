@@ -12,6 +12,8 @@ import type {
   ChapterBranch,
   BranchVersion,
   MergeResult,
+  NoteConnection,
+  NoteConnectionRecommendation,
 } from '@shared/types';
 import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
@@ -49,6 +51,8 @@ interface AppState {
   plotPoints: PlotPoint[];
   conflictWarnings: ConflictWarning[];
   stickyNotes: StickyNote[];
+  noteConnections: NoteConnection[];
+  connectionRecommendations: NoteConnectionRecommendation[];
   isLoading: boolean;
   initialized: boolean;
   chapterBranches: ChapterBranch[];
@@ -108,6 +112,19 @@ interface AppState {
   updateNotePosition: (noteId: string, data: { positionX: number; positionY: number; zIndex?: number; rotation?: number }) => Promise<void>;
   deleteStickyNote: (noteId: string) => Promise<void>;
   reorderNotes: (projectId: string, noteIds: string[]) => Promise<void>;
+  loadNoteConnections: (projectId: string) => Promise<void>;
+  createNoteConnection: (projectId: string, data: {
+    sourceNoteId: string;
+    targetNoteId: string;
+    type?: string;
+    label?: string;
+    description?: string;
+    color?: string;
+  }) => Promise<NoteConnection>;
+  updateNoteConnection: (connectionId: string, data: Partial<NoteConnection>) => Promise<void>;
+  deleteNoteConnection: (connectionId: string) => Promise<void>;
+  loadConnectionRecommendations: (projectId: string, threshold?: number) => Promise<void>;
+  getNoteConnectionsForNote: (noteId: string) => NoteConnection[];
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -128,6 +145,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   plotPoints: [],
   conflictWarnings: [],
   stickyNotes: [],
+  noteConnections: [],
+  connectionRecommendations: [],
   isLoading: false,
   initialized: false,
   chapterBranches: [],
@@ -139,13 +158,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true });
     try {
       const projectsList = await api.projects.list();
-      const [users, projects, chapters, characters, plotPoints, stickyNotes] = await Promise.all([
+      const [users, projects, chapters, characters, plotPoints, stickyNotes, noteConnections] = await Promise.all([
         api.users.list(),
         projectsList,
         Promise.all(projectsList.map((p: any) => api.chapters.list(p.id))).then(arrs => arrs.flat()),
         Promise.all(projectsList.map((p: any) => api.characters.list(p.id))).then(arrs => arrs.flat()),
         Promise.all(projectsList.map((p: any) => api.plot.list(p.id))).then(arrs => arrs.flat()),
         Promise.all(projectsList.map((p: any) => api.notes.list(p.id))).then(arrs => arrs.flat()),
+        Promise.all(projectsList.map((p: any) => api.connections.list(p.id))).then(arrs => arrs.flat()),
       ]);
 
       const allChapterIds = chapters.map((c: any) => c.id);
@@ -161,6 +181,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         characters: reviveDates(characters),
         plotPoints: reviveDates(plotPoints),
         stickyNotes: reviveDates(stickyNotes),
+        noteConnections: reviveDates(noteConnections),
+        connectionRecommendations: [],
         conflictWarnings: [],
         currentUser: reviveDates(users[0]) || get().currentUser,
         initialized: true,
@@ -651,6 +673,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       await api.notes.delete(noteId);
       set(state => ({
         stickyNotes: state.stickyNotes.filter(n => n.id !== noteId),
+        noteConnections: state.noteConnections.filter(c =>
+          c.sourceNoteId !== noteId && c.targetNoteId !== noteId
+        ),
       }));
     } catch (e) {
       console.error('Failed to delete note:', e);
@@ -672,6 +697,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to reorder notes:', e);
     }
+  },
+
+  loadNoteConnections: async (projectId: string) => {
+    try {
+      const connections = await api.connections.list(projectId);
+      set({ noteConnections: reviveDates(connections) });
+    } catch (e) {
+      console.error('Failed to load note connections:', e);
+    }
+  },
+
+  createNoteConnection: async (projectId: string, data) => {
+    const connection = reviveDates(await api.connections.create(projectId, data));
+    set(state => ({ noteConnections: [...state.noteConnections, connection] }));
+    return connection;
+  },
+
+  updateNoteConnection: async (connectionId: string, data: Partial<NoteConnection>) => {
+    try {
+      const updated = reviveDates(await api.connections.update(connectionId, data));
+      set(state => ({
+        noteConnections: state.noteConnections.map(c =>
+          c.id === connectionId ? updated : c
+        ),
+      }));
+    } catch (e) {
+      console.error('Failed to update note connection:', e);
+    }
+  },
+
+  deleteNoteConnection: async (connectionId: string) => {
+    try {
+      await api.connections.delete(connectionId);
+      set(state => ({
+        noteConnections: state.noteConnections.filter(c => c.id !== connectionId),
+      }));
+    } catch (e) {
+      console.error('Failed to delete note connection:', e);
+    }
+  },
+
+  loadConnectionRecommendations: async (projectId: string, threshold?: number) => {
+    try {
+      const recommendations = await api.connections.getRecommendations(projectId, threshold);
+      set({ connectionRecommendations: reviveDates(recommendations) });
+    } catch (e) {
+      console.error('Failed to load connection recommendations:', e);
+    }
+  },
+
+  getNoteConnectionsForNote: (noteId: string): NoteConnection[] => {
+    return get().noteConnections.filter(c =>
+      c.sourceNoteId === noteId || c.targetNoteId === noteId
+    );
   },
 
   loadChapterBranches: async (chapterId: string) => {
