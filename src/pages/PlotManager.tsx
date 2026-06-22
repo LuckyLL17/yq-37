@@ -19,7 +19,18 @@ import {
   LayoutGrid,
   BarChart3,
   List,
+  Wrench,
+  X,
+  Info,
+  UserCircle,
+  CalendarDays,
+  MapPin,
+  User,
+  ScrollText,
+  Filter,
 } from 'lucide-react';
+import type { ConflictCategory } from '@shared/types';
+import CustomRuleManager from '@/components/CustomRuleManager';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
@@ -32,7 +43,18 @@ type ViewMode = 'card' | 'timeline' | 'gantt';
 
 export default function PlotManager() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { plotPoints, chapters, conflictWarnings, createPlotPoint, updatePlotPoint, deletePlotPoint } = useAppStore();
+  const {
+    plotPoints,
+    chapters,
+    conflictWarnings,
+    customRules,
+    loadCustomRules,
+    createPlotPoint,
+    updatePlotPoint,
+    deletePlotPoint,
+    resolveConflict,
+    applyFixSuggestion,
+  } = useAppStore();
 
   const [selectedType, setSelectedType] = useState<PlotPointType | 'all'>('all');
   const [expandedPlot, setExpandedPlot] = useState<string | null>(null);
@@ -40,6 +62,7 @@ export default function PlotManager() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingPlot, setEditingPlot] = useState<PlotPoint | null>(null);
   const [editMode, setEditMode] = useState<'create' | 'edit'>('create');
+  const [showRuleManager, setShowRuleManager] = useState(false);
 
   const projectPlots = plotPoints.filter(p => p.projectId === projectId);
   const filteredPlots = selectedType === 'all'
@@ -107,9 +130,28 @@ export default function PlotManager() {
     }
   };
 
-  const unresolvedConflicts = conflictWarnings.filter(
-    c => !c.resolved && projectPlots.some(p => p.id === c.plotPointId)
-  );
+  const projectConflicts = conflictWarnings.filter(c => {
+    const relatedChapter = chapters.find(ch => ch.id === c.chapterId);
+    return relatedChapter?.projectId === projectId;
+  });
+
+  const unresolvedConflicts = projectConflicts.filter(c => !c.resolved);
+
+  const CATEGORY_CONFIG: Record<ConflictCategory, { label: string; icon: any; color: string }> = {
+    foreshadow: { label: '伏笔线索', icon: ScrollText, color: 'bg-purple-500' },
+    character_trait: { label: '人物属性', icon: UserCircle, color: 'bg-indigo-500' },
+    character_personality: { label: '人物性格', icon: Sparkles, color: 'bg-pink-500' },
+    timeline: { label: '时间线', icon: CalendarDays, color: 'bg-teal-500' },
+    geography: { label: '地理场景', icon: MapPin, color: 'bg-green-600' },
+    custom_rule: { label: '自定义规则', icon: Wrench, color: 'bg-amber-500' },
+    character_appearance: { label: '人物出场', icon: User, color: 'bg-blue-500' },
+  };
+
+  const conflictStats = Object.keys(CATEGORY_CONFIG).reduce((acc, cat) => {
+    const count = unresolvedConflicts.filter(c => c.category === cat).length;
+    if (count > 0) acc[cat as ConflictCategory] = count;
+    return acc;
+  }, {} as Record<string, number>);
 
   const stats = {
     total: projectPlots.length,
@@ -288,29 +330,122 @@ export default function PlotManager() {
         </div>
       </div>
 
-      {unresolvedConflicts.length > 0 && (
-        <div className="card p-6 border-l-4 border-brick-500">
-          <h2 className="font-serif text-lg font-bold text-brick-700 flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5" />
-            情节冲突警告 ({unresolvedConflicts.length})
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-serif text-lg font-bold text-ink-800 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            冲突检测与规则
           </h2>
-          <div className="space-y-3">
-            {unresolvedConflicts.slice(0, 3).map((warning) => (
-              <div
-                key={warning.id}
-                className="p-4 bg-brick-50 rounded-xl border border-brick-200 animate-pulse"
-              >
-                <p className="text-sm text-brick-800">{warning.message}</p>
-                {warning.plotPoint && (
-                  <div className="mt-2 text-xs text-brick-600">
-                    关联伏笔：<span className="font-medium">{warning.plotPoint.title}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          <button
+            onClick={() => {
+              if (projectId) loadCustomRules(projectId);
+              setShowRuleManager(true);
+            }}
+            className="btn-secondary text-sm flex items-center gap-1"
+          >
+            <Wrench className="w-4 h-4" />
+            管理自定义规则
+            {customRules.filter(r => r.projectId === projectId).length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded-full">
+                {customRules.filter(r => r.projectId === projectId).length}
+              </span>
+            )}
+          </button>
         </div>
-      )}
+
+        {Object.keys(conflictStats).length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-paper-200">
+            {Object.entries(conflictStats).map(([cat, count]) => {
+              const cfg = CATEGORY_CONFIG[cat as ConflictCategory];
+              if (!cfg) return null;
+              const Icon = cfg.icon;
+              return (
+                <div key={cat} className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-xs',
+                  cfg.color
+                )}>
+                  <Icon className="w-3 h-3" />
+                  {cfg.label}
+                  <span className="bg-white/20 px-1.5 rounded-full">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {unresolvedConflicts.length > 0 ? (
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {unresolvedConflicts.map((warning) => {
+              const categoryCfg = warning.category ? CATEGORY_CONFIG[warning.category] : null;
+              const CatIcon = categoryCfg?.icon || Info;
+              return (
+                <div
+                  key={warning.id}
+                  className={cn(
+                    'p-3 rounded-lg border',
+                    warning.severity === 'error'
+                      ? 'bg-brick-50 border-brick-200'
+                      : warning.severity === 'warning'
+                        ? 'bg-amber-50 border-amber-200'
+                        : 'bg-blue-50 border-blue-200'
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <div className={cn(
+                      'w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0',
+                      warning.severity === 'error'
+                        ? 'bg-brick-100 text-brick-600'
+                        : warning.severity === 'warning'
+                          ? 'bg-amber-100 text-amber-600'
+                          : 'bg-blue-100 text-blue-600'
+                    )}>
+                      <AlertTriangle className="w-3 h-3" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {categoryCfg && (
+                          <span className={cn(
+                            'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-white',
+                            categoryCfg.color
+                          )}>
+                            <CatIcon className="w-2 h-2" />
+                            {categoryCfg.label}
+                          </span>
+                        )}
+                        <span className={cn(
+                          'text-[10px] font-medium',
+                          warning.severity === 'error' ? 'text-brick-600' : warning.severity === 'warning' ? 'text-amber-600' : 'text-blue-600'
+                        )}>
+                          {warning.severity === 'error' ? '严重' : warning.severity === 'warning' ? '警告' : '提示'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-ink-700 mt-1 line-clamp-2">{warning.message}</p>
+                      {warning.plotPoint && (
+                        <p className="text-[10px] text-ink-500 mt-0.5">
+                          关联：{warning.plotPoint.title}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => resolveConflict(warning.id)}
+                      className="p-1 rounded hover:bg-white/60 text-ink-400 hover:text-ink-600 flex-shrink-0"
+                      title="标记为已处理"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-6">
+            <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-2" />
+            <p className="text-sm text-ink-600 font-medium">未检测到冲突</p>
+            <p className="text-xs text-ink-400 mt-0.5">情节、人物、时间和地理设定保持一致</p>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2 flex-wrap">
@@ -401,6 +536,17 @@ export default function PlotManager() {
         chapters={projectChapters}
         mode={editMode}
       />
+
+      {showRuleManager && projectId && (
+        <div className="fixed inset-0 bg-ink-900/50 flex items-center justify-center z-50 animate-fade-in p-4">
+          <div className="card w-full max-w-4xl h-[85vh] overflow-hidden animate-slide-in-right">
+            <CustomRuleManager
+              projectId={projectId}
+              onClose={() => setShowRuleManager(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

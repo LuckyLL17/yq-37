@@ -19,6 +19,10 @@ import type {
   MergeResult,
   NoteConnection,
   NoteConnectionRecommendation,
+  CustomRule,
+  TimelineEvent,
+  GeographyLocation,
+  ConflictFixSuggestion,
 } from '@shared/types';
 import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
@@ -141,6 +145,9 @@ interface AppState {
   chapterBranches: ChapterBranch[];
   branchVersions: BranchVersion[];
   currentBranchId: string | null;
+  customRules: CustomRule[];
+  timelineEvents: TimelineEvent[];
+  geographyLocations: GeographyLocation[];
 
   loadChapterBranches: (chapterId: string) => Promise<void>;
   getChapterBranches: (chapterId: string) => ChapterBranch[];
@@ -176,6 +183,14 @@ interface AppState {
   getPlotPointsForChapter: (chapterId: string) => PlotPoint[];
   checkConflicts: (chapterId: string) => Promise<ConflictWarning[]>;
   resolveConflict: (conflictId: string) => Promise<void>;
+  applyFixSuggestion: (conflictId: string, suggestionId: string) => Promise<{ success: boolean; message: string; updatedChapter?: Chapter }>;
+  loadCustomRules: (projectId: string) => Promise<void>;
+  createCustomRule: (projectId: string, data: Partial<CustomRule>) => Promise<CustomRule>;
+  updateCustomRule: (ruleId: string, data: Partial<CustomRule>) => Promise<void>;
+  toggleCustomRule: (ruleId: string) => Promise<boolean>;
+  deleteCustomRule: (ruleId: string) => Promise<void>;
+  loadTimeline: (projectId: string) => Promise<void>;
+  loadLocations: (projectId: string) => Promise<void>;
   exportToPdf: (config: PdfExportConfig) => Promise<void>;
   exportToMarkdown: (config: MarkdownExportConfig) => Promise<void>;
   exportToTxt: (config: TxtExportConfig) => Promise<void>;
@@ -238,6 +253,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   chapterBranches: [],
   branchVersions: [],
   currentBranchId: null,
+  customRules: [],
+  timelineEvents: [],
+  geographyLocations: [],
 
   initApp: async () => {
     if (get().initialized) return;
@@ -469,6 +487,101 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to resolve conflict:', e);
+    }
+  },
+
+  applyFixSuggestion: async (conflictId: string, suggestionId: string) => {
+    try {
+      const result = await api.conflicts.applyFix(conflictId, suggestionId);
+      if (result.success) {
+        set(state => ({
+          conflictWarnings: state.conflictWarnings.map(c =>
+            c.id === conflictId
+              ? { ...c, resolved: true, resolvedAt: new Date(), resolutionNote: result.message }
+              : c
+          ),
+          currentChapter: result.updatedChapter
+            ? { ...result.updatedChapter }
+            : state.currentChapter,
+          chapters: result.updatedChapter
+            ? state.chapters.map(ch => ch.id === result.updatedChapter.id ? { ...result.updatedChapter } : ch)
+            : state.chapters,
+        }));
+      }
+      return { success: result.success, message: result.message, updatedChapter: result.updatedChapter };
+    } catch (e) {
+      console.error('Failed to apply fix:', e);
+      return { success: false, message: (e as Error).message || '应用修复建议失败' };
+    }
+  },
+
+  loadCustomRules: async (projectId: string) => {
+    try {
+      const rules = reviveDates(await api.customRules.list(projectId));
+      set({ customRules: rules });
+    } catch (e) {
+      console.error('Failed to load custom rules:', e);
+    }
+  },
+
+  createCustomRule: async (projectId: string, data: Partial<CustomRule>): Promise<CustomRule> => {
+    const rule = reviveDates(await api.customRules.create(projectId, data));
+    set(state => ({ customRules: [...state.customRules, rule] }));
+    return rule;
+  },
+
+  updateCustomRule: async (ruleId: string, data: Partial<CustomRule>) => {
+    try {
+      const updated = reviveDates(await api.customRules.update(ruleId, data));
+      set(state => ({
+        customRules: state.customRules.map(r => r.id === ruleId ? updated : r),
+      }));
+    } catch (e) {
+      console.error('Failed to update custom rule:', e);
+    }
+  },
+
+  toggleCustomRule: async (ruleId: string): Promise<boolean> => {
+    try {
+      const result = await api.customRules.toggle(ruleId);
+      set(state => ({
+        customRules: state.customRules.map(r =>
+          r.id === ruleId ? { ...r, isEnabled: result.isEnabled } : r
+        ),
+      }));
+      return result.isEnabled;
+    } catch (e) {
+      console.error('Failed to toggle custom rule:', e);
+      return false;
+    }
+  },
+
+  deleteCustomRule: async (ruleId: string) => {
+    try {
+      await api.customRules.delete(ruleId);
+      set(state => ({
+        customRules: state.customRules.filter(r => r.id !== ruleId),
+      }));
+    } catch (e) {
+      console.error('Failed to delete custom rule:', e);
+    }
+  },
+
+  loadTimeline: async (projectId: string) => {
+    try {
+      const events = reviveDates(await api.timeline.list(projectId));
+      set({ timelineEvents: events });
+    } catch (e) {
+      console.error('Failed to load timeline:', e);
+    }
+  },
+
+  loadLocations: async (projectId: string) => {
+    try {
+      const locations = reviveDates(await api.locations.list(projectId));
+      set({ geographyLocations: locations });
+    } catch (e) {
+      console.error('Failed to load locations:', e);
     }
   },
 

@@ -122,6 +122,26 @@ export interface PlotPoint {
 
 export type ConflictSeverity = 'info' | 'warning' | 'error';
 
+export type ConflictCategory =
+  | 'foreshadow'
+  | 'character_trait'
+  | 'character_personality'
+  | 'timeline'
+  | 'geography'
+  | 'custom_rule'
+  | 'character_appearance';
+
+export interface ConflictFixSuggestion {
+  id: string;
+  title: string;
+  description: string;
+  type: 'replace_text' | 'add_text' | 'delete_text' | 'update_character' | 'update_plot' | 'custom';
+  targetLine?: number;
+  originalText?: string;
+  suggestedText?: string;
+  autoApplicable: boolean;
+}
+
 export interface ConflictWarning {
   id: string;
   chapterId: string;
@@ -130,12 +150,91 @@ export interface ConflictWarning {
   characterId?: string;
   character?: Character;
   severity: ConflictSeverity;
+  category: ConflictCategory;
   message: string;
+  detailedDescription?: string;
   lineNumber?: number;
   columnNumber?: number;
+  endLineNumber?: number;
+  conflictingText?: string;
+  evidence?: Array<{
+    text: string;
+    source: string;
+    line?: number;
+  }>;
+  suggestions?: ConflictFixSuggestion[];
+  customRuleId?: string;
   createdAt: Date;
   resolved: boolean;
   resolvedAt?: Date;
+  resolvedBy?: string;
+  resolutionNote?: string;
+}
+
+export type CustomRuleConditionType =
+  | 'keyword_present'
+  | 'keyword_absent'
+  | 'regex_match'
+  | 'character_trait_conflict'
+  | 'timeline_conflict'
+  | 'geography_conflict'
+  | 'character_behavior';
+
+export type CustomRuleActionType = 'warn' | 'error' | 'info' | 'suggest_fix';
+
+export interface CustomRuleCondition {
+  id: string;
+  type: CustomRuleConditionType;
+  value: string;
+  description?: string;
+}
+
+export interface CustomRule {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  severity: ConflictSeverity;
+  category: ConflictCategory;
+  conditions: CustomRuleCondition[];
+  conditionOperator: 'and' | 'or';
+  action: CustomRuleActionType;
+  customMessage?: string;
+  suggestions?: ConflictFixSuggestion[];
+  isEnabled: boolean;
+  isBuiltIn: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: string;
+}
+
+export interface TimelineEvent {
+  id: string;
+  projectId: string;
+  chapterId?: string;
+  chapter?: Chapter;
+  eventName: string;
+  timeDescription: string;
+  year?: number;
+  month?: number;
+  day?: number;
+  orderInStory: number;
+  relatedCharacterIds: string[];
+  location?: string;
+  description: string;
+  createdAt: Date;
+}
+
+export interface GeographyLocation {
+  id: string;
+  projectId: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  parentLocationId?: string;
+  coordinates?: { x: number; y: number };
+  relatedChapterIds: string[];
+  createdAt: Date;
 }
 
 export interface DiffSegment {

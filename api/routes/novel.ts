@@ -3,7 +3,6 @@ import type { Request, Response } from 'express';
 import {
   mockUsers,
   mockProjects,
-  mockProjectMembers,
   mockChapters,
   mockChapterVersions,
   mockCharacters,
@@ -13,7 +12,10 @@ import {
   mockChapterBranches,
   mockBranchVersions,
   mockNoteConnections,
-} from '../data/mockData.js';
+  mockCustomRules,
+  mockTimelineEvents,
+  mockGeographyLocations,
+} from '../data/mockData';
 import type {
   PdfExportConfig,
   ConflictWarning,
@@ -24,9 +26,21 @@ import type {
   BranchStatus,
   NoteConnection,
   NoteConnectionType,
-} from '../../shared/types.js';
+  CustomRule,
+  ConflictFixSuggestion,
+  Character,
+  Chapter,
+} from '../../shared/types';
 import { diff_match_patch } from 'diff-match-patch';
 import { jsPDF } from 'jspdf';
+import {
+  detectPersonalityConflicts,
+  detectTimelineConflicts,
+  detectGeographyConflicts,
+  detectTraitConflicts,
+  applyCustomRules,
+  generateFixForForeshadowRemoved,
+} from '../../src/lib/conflictDetector';
 
 const router = express.Router();
 const dmp = new diff_match_patch();
@@ -369,12 +383,14 @@ router.post('/plot/:id/hints', (req: Request, res: Response) => {
   res.status(201).json(hint);
 });
 
-// ==================== Conflict Check ====================
+// ==================== Conflict Check (Enhanced Semantic Analysis) ====================
 
 router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
   const { chapterId } = req.body;
   const chapter = mockChapters.find(c => c.id === chapterId);
   if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
+
+  const projectId = req.params.id;
 
   for (let i = mockConflictWarnings.length - 1; i >= 0; i--) {
     if (mockConflictWarnings[i].chapterId === chapterId && !mockConflictWarnings[i].resolved) {
@@ -384,10 +400,12 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
 
   const warnings: ConflictWarning[] = [];
   const contentLines = chapter.content.split('\n');
-  const projectId = req.params.id;
 
-  mockCharacters.forEach(character => {
-    if (character.projectId !== projectId) return;
+  const projectCharacters = mockCharacters.filter(c => c.projectId === projectId);
+  const projectPlotPoints = mockPlotPoints.filter(p => p.projectId === projectId);
+  const projectChapters = mockChapters.filter(c => c.projectId === projectId);
+
+  projectCharacters.forEach(character => {
     const nameMentions = contentLines.filter(line => line.includes(character.name));
     if (nameMentions.length > 0) {
       const existingAppearance = character.appearances.find(a => a.chapterId === chapterId);
@@ -397,47 +415,51 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
           if (line.includes(character.name) && firstLine === -1) firstLine = idx + 1;
         });
         warnings.push({
-          id: `conflict-char-${Date.now()}-${character.id}`,
+          id: `conflict-appearance-${Date.now()}-${character.id}`,
           chapterId,
           characterId: character.id,
           character,
           severity: 'info',
-          message: `检测到人物"${character.name}"在本章出场，但未在人物百科中标记为出场角色。建议更新人物出场记录。`,
+          category: 'character_appearance',
+          message: `检测到人物「${character.name}」在本章出场，但未在人物百科中标记为出场角色。`,
+          detailedDescription: `在第${firstLine}行首次出现人物「${character.name}」，但该人物的出场记录中未包含本章。建议在人物百科中更新出场记录。`,
           lineNumber: firstLine > 0 ? firstLine : undefined,
+          suggestions: [
+            {
+              id: `sug-appear-${Date.now()}`,
+              title: '将本章添加到人物出场记录',
+              description: '在人物百科中自动将本章标记为该人物的出场章节。',
+              type: 'update_character',
+              autoApplicable: true,
+            },
+          ],
           createdAt: new Date(),
           resolved: false,
         });
       }
 
-      const traitEntries = Object.entries(character.traits);
-      for (const [key, value] of traitEntries) {
-        const knownTraits = String(value).split(/[、,，]/);
-        for (const trait of knownTraits) {
-          const trimmed = trait.trim();
-          if (trimmed.length >= 2) {
-            const pattern = new RegExp(`不${trimmed}|非${trimmed}|没有${trimmed}|无${trimmed}`, 'g');
-            const matches = contentLines.filter(line => pattern.test(line) && line.includes(character.name));
-            if (matches.length > 0) {
-              warnings.push({
-                id: `conflict-trait-${Date.now()}-${character.id}-${key}`,
-                chapterId,
-                characterId: character.id,
-                character,
-                severity: 'warning',
-                message: `本章内容可能与"${trimmed}"矛盾：人物"${character.name}"的属性"${key}"设定为"${trimmed}"，但文中出现了否定表述。`,
-                createdAt: new Date(),
-                resolved: false,
-              });
-            }
-          }
-        }
-      }
+      const traitConflicts = detectTraitConflicts(chapter.content, character);
+      traitConflicts.forEach(w => {
+        w.chapterId = chapterId;
+        warnings.push(w);
+      });
+
+      const personalityConflicts = detectPersonalityConflicts(chapter.content, character);
+      personalityConflicts.forEach(w => {
+        w.chapterId = chapterId;
+        warnings.push(w);
+      });
     }
   });
 
-  mockPlotPoints.forEach(plotPoint => {
+  const timelineConflicts = detectTimelineConflicts(chapter.content, chapter, projectChapters, mockTimelineEvents);
+  warnings.push(...timelineConflicts);
+
+  const geographyConflicts = detectGeographyConflicts(chapter.content, chapter, projectChapters, mockGeographyLocations);
+  warnings.push(...geographyConflicts);
+
+  projectPlotPoints.forEach(plotPoint => {
     if (plotPoint.status === 'resolved') return;
-    if (plotPoint.projectId !== projectId) return;
 
     const relatedHints = plotPoint.hints.filter(h => h.chapterId === chapterId);
     const isRelatedChapter = plotPoint.relatedChapterIds.includes(chapterId);
@@ -449,13 +471,22 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
             chapter.content.includes(hint.hintText.slice(0, Math.min(15, hint.hintText.length)));
 
           if (!isStillPresent) {
+            const suggestions = generateFixForForeshadowRemoved(plotPoint, hint.hintText, chapter);
             warnings.push({
               id: `conflict-foreshadow-removed-${Date.now()}-${hint.id}`,
               chapterId,
               plotPointId: plotPoint.id,
               plotPoint,
               severity: 'error',
-              message: `伏笔"${plotPoint.title}"的线索"${hint.hintText.slice(0, 40)}..."似乎已从本章内容中被删除。这可能导致后续情节无法回收，请确认是否为有意修改。`,
+              category: 'foreshadow',
+              message: `伏笔「${plotPoint.title}」的线索「${hint.hintText.slice(0, 40)}...」似乎已从本章内容中被删除。`,
+              detailedDescription: `伏笔「${plotPoint.title}」原本在本章埋有线索：「${hint.hintText}」。检测到该线索已不存在于本章内容中。这可能导致后续情节无法回收该伏笔，请确认是否为有意修改。`,
+              conflictingText: hint.hintText,
+              evidence: [
+                { text: hint.hintText, source: `伏笔线索：${plotPoint.title}` },
+                { text: hint.locationDescription || '原位置未记录', source: '线索登记位置' },
+              ],
+              suggestions,
               createdAt: new Date(),
               resolved: false,
             });
@@ -472,8 +503,11 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
               plotPointId: plotPoint.id,
               plotPoint,
               severity: 'info',
-              message: `检测到伏笔"${plotPoint.title}"的线索：${hint.hintText.slice(0, 50)}。请确保与后续情节保持一致。`,
+              category: 'foreshadow',
+              message: `检测到伏笔「${plotPoint.title}」的线索存在：${hint.hintText.slice(0, 30)}...`,
+              detailedDescription: `在第${lineNumber}行检测到伏笔「${plotPoint.title}」的线索。请确保该伏笔的最终回收与当前线索保持一致。`,
               lineNumber: lineNumber > 0 ? lineNumber : undefined,
+              conflictingText: hint.hintText.slice(0, 50),
               createdAt: new Date(),
               resolved: false,
             });
@@ -487,9 +521,7 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
           .split(/\s+/)
           .filter(w => w.length >= 2);
 
-        const matchedKeywords = descriptionKeywords.filter(kw =>
-          chapter.content.includes(kw)
-        );
+        const matchedKeywords = descriptionKeywords.filter(kw => chapter.content.includes(kw));
 
         if (matchedKeywords.length > 0) {
           warnings.push({
@@ -498,7 +530,22 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
             plotPointId: plotPoint.id,
             plotPoint,
             severity: 'warning',
-            message: `本章内容涉及伏笔"${plotPoint.title}"（匹配关键词：${matchedKeywords.slice(0, 5).join('、')}），但该伏笔仍为"待回收"状态。如果本章推进了该伏笔的情节，请更新伏笔状态为"进行中"。`,
+            category: 'foreshadow',
+            message: `本章内容涉及伏笔「${plotPoint.title}」，但该伏笔仍为「待回收」状态。`,
+            detailedDescription: `检测到本章包含与伏笔「${plotPoint.title}」相关的关键词（${matchedKeywords.slice(0, 5).join('、')}）。如果本章已经推进了该伏笔的情节，请更新伏笔状态为「进行中」或「已回收」。`,
+            evidence: matchedKeywords.slice(0, 5).map(kw => ({
+              text: kw,
+              source: '匹配关键词',
+            })),
+            suggestions: [
+              {
+                id: `sug-pending-${Date.now()}`,
+                title: '更新伏笔状态为「进行中」',
+                description: '如果本章推进了该伏笔的情节，请将伏笔状态从「待回收」更新为「进行中」。',
+                type: 'update_plot',
+                autoApplicable: true,
+              },
+            ],
             createdAt: new Date(),
             resolved: false,
           });
@@ -507,9 +554,197 @@ router.post('/projects/:id/plot/check', (req: Request, res: Response) => {
     }
   });
 
+  const customRuleWarnings = applyCustomRules(chapter.content, chapter, mockCustomRules);
+  warnings.push(...customRuleWarnings);
+
   warnings.forEach(w => mockConflictWarnings.push(w));
 
   res.json(warnings);
+});
+
+// ==================== Apply Fix Suggestion ====================
+
+router.post('/conflicts/:id/apply-fix', async (req: Request, res: Response) => {
+  const { suggestionId } = req.body;
+  const warning = mockConflictWarnings.find(c => c.id === req.params.id);
+  if (!warning) return res.status(404).json({ error: 'Conflict not found' });
+
+  const suggestion = warning.suggestions?.find(s => s.id === suggestionId);
+  if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
+
+  const chapter = mockChapters.find(c => c.id === warning.chapterId);
+  if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
+
+  let newContent = chapter.content;
+  let applied = false;
+  let message = '';
+
+  if (suggestion.type === 'replace_text' && suggestion.targetLine) {
+    const lines = chapter.content.split('\n');
+    const lineIdx = suggestion.targetLine - 1;
+    if (lines[lineIdx] !== undefined) {
+      if (suggestion.suggestedText && suggestion.originalText) {
+        lines[lineIdx] = lines[lineIdx].replace(suggestion.originalText, suggestion.suggestedText);
+        newContent = lines.join('\n');
+        applied = true;
+        message = `已将第${suggestion.targetLine}行的「${suggestion.originalText.slice(0, 20)}...」替换为推荐内容。`;
+      } else if (suggestion.suggestedText) {
+        const lineBefore = lines[lineIdx];
+        lines[lineIdx] = suggestion.suggestedText;
+        newContent = lines.join('\n');
+        applied = true;
+        message = `已将第${suggestion.targetLine}行内容替换为推荐文本。`;
+      }
+    }
+  } else if (suggestion.type === 'add_text' && suggestion.targetLine !== undefined) {
+    const lines = chapter.content.split('\n');
+    const insertIdx = Math.max(0, Math.min(suggestion.targetLine, lines.length));
+    lines.splice(insertIdx, 0, suggestion.suggestedText || '');
+    newContent = lines.join('\n');
+    applied = true;
+    message = `已在第${suggestion.targetLine}行插入推荐文本。`;
+  } else if (suggestion.type === 'delete_text' && suggestion.targetLine !== undefined) {
+    const lines = chapter.content.split('\n');
+    const lineIdx = suggestion.targetLine - 1;
+    if (lines[lineIdx] !== undefined) {
+      lines.splice(lineIdx, 1);
+      newContent = lines.join('\n');
+      applied = true;
+      message = `已删除第${suggestion.targetLine}行。`;
+    }
+  } else if (suggestion.type === 'update_plot' && warning.plotPointId) {
+    const plotIdx = mockPlotPoints.findIndex(p => p.id === warning.plotPointId);
+    if (plotIdx !== -1) {
+      mockPlotPoints[plotIdx].status = 'active';
+      mockPlotPoints[plotIdx] = { ...mockPlotPoints[plotIdx] };
+      applied = true;
+      message = `已更新伏笔「${mockPlotPoints[plotIdx].title}」的状态为「进行中」。`;
+    }
+  } else if (suggestion.type === 'update_character' && warning.characterId) {
+    const charIdx = mockCharacters.findIndex(c => c.id === warning.characterId);
+    if (charIdx !== -1) {
+      const chapterInfo = mockChapters.find(c => c.id === warning.chapterId);
+      mockCharacters[charIdx].appearances.push({
+        id: `app-auto-${Date.now()}`,
+        characterId: warning.characterId,
+        chapterId: warning.chapterId,
+        chapter: chapterInfo as any,
+        context: '自动添加',
+        createdAt: new Date(),
+      });
+      applied = true;
+      message = `已将本章添加到人物「${mockCharacters[charIdx].name}」的出场记录。`;
+    }
+  } else {
+    message = '该建议需要人工处理。';
+  }
+
+  if (applied && newContent !== chapter.content) {
+    const chapterIdx = mockChapters.findIndex(c => c.id === warning.chapterId);
+    if (chapterIdx !== -1) {
+      mockChapters[chapterIdx].content = newContent;
+      mockChapters[chapterIdx].wordCount = newContent.replace(/\s/g, '').length;
+      mockChapters[chapterIdx].updatedAt = new Date();
+    }
+  }
+
+  if (applied) {
+    warning.resolved = true;
+    warning.resolvedAt = new Date();
+    warning.resolutionNote = message;
+  }
+
+  res.json({
+    success: applied,
+    message,
+    appliedFix: suggestion,
+    updatedContent: newContent !== chapter.content ? newContent : undefined,
+    updatedChapter: newContent !== chapter.content ? mockChapters.find(c => c.id === warning.chapterId) : undefined,
+  });
+});
+
+// ==================== Custom Rules CRUD ====================
+
+router.get('/projects/:id/custom-rules', (req: Request, res: Response) => {
+  const rules = mockCustomRules.filter(r => r.projectId === req.params.id);
+  res.json(rules);
+});
+
+router.get('/custom-rules/:id', (req: Request, res: Response) => {
+  const rule = mockCustomRules.find(r => r.id === req.params.id);
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+  res.json(rule);
+});
+
+router.post('/projects/:id/custom-rules', (req: Request, res: Response) => {
+  const newRule: CustomRule = {
+    id: `rule-${Date.now()}`,
+    projectId: req.params.id,
+    name: req.body.name || '新建规则',
+    description: req.body.description || '',
+    severity: req.body.severity || 'warning',
+    category: req.body.category || 'custom_rule',
+    conditions: req.body.conditions || [],
+    conditionOperator: req.body.conditionOperator || 'or',
+    action: req.body.action || 'warn',
+    customMessage: req.body.customMessage,
+    suggestions: req.body.suggestions || [],
+    isEnabled: req.body.isEnabled !== false,
+    isBuiltIn: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    createdBy: req.body.createdBy || 'user-1',
+  };
+  mockCustomRules.push(newRule);
+  res.status(201).json(newRule);
+});
+
+router.put('/custom-rules/:id', (req: Request, res: Response) => {
+  const index = mockCustomRules.findIndex(r => r.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Rule not found' });
+  if (mockCustomRules[index].isBuiltIn) {
+    return res.status(403).json({ error: 'Cannot modify built-in rules' });
+  }
+  mockCustomRules[index] = {
+    ...mockCustomRules[index],
+    ...req.body,
+    updatedAt: new Date(),
+  };
+  res.json(mockCustomRules[index]);
+});
+
+router.put('/custom-rules/:id/toggle', (req: Request, res: Response) => {
+  const rule = mockCustomRules.find(r => r.id === req.params.id);
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+  rule.isEnabled = !rule.isEnabled;
+  rule.updatedAt = new Date();
+  res.json({ success: true, isEnabled: rule.isEnabled });
+});
+
+router.delete('/custom-rules/:id', (req: Request, res: Response) => {
+  const index = mockCustomRules.findIndex(r => r.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Rule not found' });
+  if (mockCustomRules[index].isBuiltIn) {
+    return res.status(403).json({ error: 'Cannot delete built-in rules' });
+  }
+  mockCustomRules.splice(index, 1);
+  res.json({ success: true });
+});
+
+// ==================== Timeline Events ====================
+
+router.get('/projects/:id/timeline', (req: Request, res: Response) => {
+  const events = mockTimelineEvents
+    .filter(e => e.projectId === req.params.id)
+    .sort((a, b) => a.orderInStory - b.orderInStory);
+  res.json(events);
+});
+
+// ==================== Geography Locations ====================
+
+router.get('/projects/:id/locations', (req: Request, res: Response) => {
+  const locations = mockGeographyLocations.filter(l => l.projectId === req.params.id);
+  res.json(locations);
 });
 
 // ==================== Conflict Resolution ====================

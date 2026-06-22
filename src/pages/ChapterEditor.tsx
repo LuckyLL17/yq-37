@@ -23,7 +23,17 @@ import {
   PenLine,
   GitBranch,
   ChevronRight,
+  Wrench,
+  ChevronUp,
+  Sparkles,
+  UserCircle,
+  CalendarDays,
+  MapPin,
+  Sparkles as SparklesIcon,
+  ScrollText,
+  Filter,
 } from 'lucide-react';
+import type { ConflictCategory } from '@shared/types';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
 import { speak, stopSpeak, isSpeaking } from '@/lib/tts';
@@ -45,6 +55,7 @@ export default function ChapterEditor() {
     createVersion,
     checkConflicts,
     resolveConflict,
+    applyFixSuggestion,
     checkAndReleaseExpiredLocks,
     getCharactersForChapter,
     getPlotPointsForChapter,
@@ -68,6 +79,9 @@ export default function ChapterEditor() {
   const [conflicts, setConflicts] = useState<ConflictWarning[]>([]);
   const [showNewChapterModal, setShowNewChapterModal] = useState(false);
   const [newChapterTitle, setNewChapterTitle] = useState('');
+  const [expandedConflictId, setExpandedConflictId] = useState<string | null>(null);
+  const [conflictFilter, setConflictFilter] = useState<ConflictCategory | 'all'>('all');
+  const [applyingFix, setApplyingFix] = useState<string | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'info' | 'conflicts'>('info');
@@ -269,6 +283,41 @@ export default function ChapterEditor() {
     setShowBranchSelector(false);
   };
 
+  const CATEGORY_CONFIG: Record<ConflictCategory | 'all', { label: string; icon: any; color: string }> = {
+    all: { label: '全部', icon: Filter, color: 'bg-ink-500' },
+    foreshadow: { label: '伏笔线索', icon: ScrollText, color: 'bg-purple-500' },
+    character_trait: { label: '人物属性', icon: UserCircle, color: 'bg-indigo-500' },
+    character_personality: { label: '人物性格', icon: SparklesIcon, color: 'bg-pink-500' },
+    timeline: { label: '时间线', icon: CalendarDays, color: 'bg-teal-500' },
+    geography: { label: '地理场景', icon: MapPin, color: 'bg-green-600' },
+    custom_rule: { label: '自定义规则', icon: Wrench, color: 'bg-amber-500' },
+    character_appearance: { label: '人物出场', icon: User, color: 'bg-blue-500' },
+  };
+
+  const handleApplyFix = async (conflictId: string, suggestionId: string) => {
+    setApplyingFix(`${conflictId}-${suggestionId}`);
+    try {
+      const result = await applyFixSuggestion(conflictId, suggestionId);
+      if (result.success && result.updatedChapter) {
+        setContent(result.updatedChapter.content);
+      }
+      const updated = await checkConflicts(currentChapter?.id || '');
+      setConflicts(updated);
+      setExpandedConflictId(null);
+    } finally {
+      setApplyingFix(null);
+    }
+  };
+
+  const toggleConflictExpand = (id: string) => {
+    setExpandedConflictId(prev => prev === id ? null : id);
+  };
+
+  const unresolvedConflicts = conflicts.filter(c => !c.resolved);
+  const filteredUnresolvedConflicts = unresolvedConflicts.filter(
+    c => conflictFilter === 'all' || c.category === conflictFilter
+  );
+
   const handleCreateChapter = async () => {
     if (!newChapterTitle.trim() || !projectId) return;
     const newChapter = await createChapter(projectId, newChapterTitle);
@@ -289,7 +338,6 @@ export default function ChapterEditor() {
 
   const relatedCharacters = currentChapter ? getCharactersForChapter(currentChapter.id) : [];
   const relatedPlotPoints = currentChapter ? getPlotPointsForChapter(currentChapter.id) : [];
-  const unresolvedConflicts = conflicts.filter(c => !c.resolved);
 
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-6 relative">
@@ -865,70 +913,255 @@ export default function ChapterEditor() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {unresolvedConflicts.length > 0 ? (
-                    unresolvedConflicts.map((warning) => (
-                      <div
-                        key={warning.id}
-                        className={cn(
-                          'p-4 rounded-xl border',
-                          warning.severity === 'error'
-                            ? 'bg-brick-50 border-brick-200 animate-shake'
-                            : warning.severity === 'warning'
-                              ? 'bg-amber-50 border-amber-200'
-                              : 'bg-blue-50 border-blue-200'
-                        )}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={cn(
-                            'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                  {unresolvedConflicts.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pb-3 border-b border-paper-200">
+                      {(['all', 'foreshadow', 'character_personality', 'character_trait', 'timeline', 'geography', 'custom_rule', 'character_appearance'] as const).map(cat => {
+                        const cfg = CATEGORY_CONFIG[cat];
+                        const count = cat === 'all'
+                          ? unresolvedConflicts.length
+                          : unresolvedConflicts.filter(c => c.category === cat).length;
+                        if (count === 0 && cat !== 'all') return null;
+                        const Icon = cfg.icon;
+                        const active = conflictFilter === cat;
+                        return (
+                          <button
+                            key={cat}
+                            onClick={() => setConflictFilter(cat)}
+                            className={cn(
+                              'px-2.5 py-1 rounded-full text-xs flex items-center gap-1 transition-all',
+                              active
+                                ? `${cfg.color} text-white shadow-sm`
+                                : 'bg-paper-100 text-ink-500 hover:bg-paper-200'
+                            )}
+                          >
+                            <Icon className="w-3 h-3" />
+                            {cfg.label}
+                            <span className={cn('px-1 rounded-full text-[10px]',
+                              active ? 'bg-white/20 text-white' : 'bg-paper-200 text-ink-400'
+                            )}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {filteredUnresolvedConflicts.length > 0 ? (
+                    filteredUnresolvedConflicts.map((warning) => {
+                      const isExpanded = expandedConflictId === warning.id;
+                      const categoryCfg = warning.category ? CATEGORY_CONFIG[warning.category] : null;
+                      const CatIcon = categoryCfg?.icon || Info;
+                      const hasSuggestions = warning.suggestions && warning.suggestions.length > 0;
+                      return (
+                        <div
+                          key={warning.id}
+                          className={cn(
+                            'rounded-xl border overflow-hidden',
                             warning.severity === 'error'
-                              ? 'bg-brick-100 text-brick-600'
+                              ? 'bg-brick-50 border-brick-200'
                               : warning.severity === 'warning'
-                                ? 'bg-amber-100 text-amber-600'
-                                : 'bg-blue-100 text-blue-600'
-                          )}>
-                            {warning.severity === 'error' || warning.severity === 'warning' ? (
-                              <AlertTriangle className="w-4 h-4" />
-                            ) : (
-                              <Info className="w-4 h-4" />
+                                ? 'bg-amber-50 border-amber-200'
+                                : 'bg-blue-50 border-blue-200'
+                          )}
+                        >
+                          <div className="p-4">
+                            <div className="flex items-start gap-3">
+                              <div className={cn(
+                                'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                                warning.severity === 'error'
+                                  ? 'bg-brick-100 text-brick-600'
+                                  : warning.severity === 'warning'
+                                    ? 'bg-amber-100 text-amber-600'
+                                    : 'bg-blue-100 text-blue-600'
+                              )}>
+                                {warning.severity === 'error' ? (
+                                  <AlertTriangle className="w-4 h-4" />
+                                ) : warning.severity === 'warning' ? (
+                                  <AlertTriangle className="w-4 h-4" />
+                                ) : (
+                                  <Info className="w-4 h-4" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {categoryCfg && (
+                                    <span className={cn(
+                                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-white',
+                                      categoryCfg.color
+                                    )}>
+                                      <CatIcon className="w-2.5 h-2.5" />
+                                      {categoryCfg.label}
+                                    </span>
+                                  )}
+                                  <span className={cn(
+                                    'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium',
+                                    warning.severity === 'error'
+                                      ? 'bg-brick-200 text-brick-700'
+                                      : warning.severity === 'warning'
+                                        ? 'bg-amber-200 text-amber-700'
+                                        : 'bg-blue-200 text-blue-700'
+                                  )}>
+                                    {warning.severity === 'error' ? '严重' : warning.severity === 'warning' ? '警告' : '提示'}
+                                  </span>
+                                </div>
+                                <p className="text-sm font-medium text-ink-800 mt-1.5">{warning.message}</p>
+                                {warning.detailedDescription && !isExpanded && (
+                                  <p className="text-xs text-ink-500 mt-1 line-clamp-2">{warning.detailedDescription}</p>
+                                )}
+                                <div className="flex items-center gap-3 mt-2 text-xs text-ink-400">
+                                  {warning.lineNumber && (
+                                    <span className="flex items-center gap-1">
+                                      <Edit3 className="w-3 h-3" />
+                                      第 {warning.lineNumber} 行
+                                    </span>
+                                  )}
+                                  {hasSuggestions && (
+                                    <span className="flex items-center gap-1 text-amber-600">
+                                      <Sparkles className="w-3 h-3" />
+                                      {warning.suggestions!.length} 条修复建议
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {(warning.detailedDescription || warning.evidence?.length || hasSuggestions) && (
+                                <button
+                                  onClick={() => toggleConflictExpand(warning.id)}
+                                  className="p-1 rounded hover:bg-white/60 transition-colors flex-shrink-0"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-4 h-4 text-ink-500" />
+                                  ) : (
+                                    <ChevronDown className="w-4 h-4 text-ink-500" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+
+                            {isExpanded && (
+                              <div className="mt-4 space-y-3 animate-fade-in">
+                                {warning.detailedDescription && (
+                                  <div className="p-3 bg-white/60 rounded-lg">
+                                    <p className="text-xs text-ink-600 leading-relaxed">{warning.detailedDescription}</p>
+                                  </div>
+                                )}
+                                {warning.conflictingText && (
+                                  <div className="p-3 bg-white/60 rounded-lg border-l-2 border-amber-400">
+                                    <p className="text-[10px] uppercase tracking-wide text-ink-400 mb-1">冲突文本</p>
+                                    <p className="text-sm text-ink-700 font-mono bg-paper-50 p-2 rounded">
+                                      {warning.conflictingText}
+                                    </p>
+                                  </div>
+                                )}
+                                {warning.evidence && warning.evidence.length > 0 && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-ink-400 mb-2">证据</p>
+                                    <div className="space-y-1.5">
+                                      {warning.evidence.map((ev, idx) => (
+                                        <div key={idx} className="p-2 bg-white/60 rounded-lg flex items-start gap-2">
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-ink-400 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-ink-700 break-words">{ev.text}</p>
+                                            <p className="text-[10px] text-ink-400 mt-0.5">{ev.source}</p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {hasSuggestions && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-amber-600 mb-2 flex items-center gap-1">
+                                      <Sparkles className="w-3 h-3" />
+                                      AI 修复建议
+                                    </p>
+                                    <div className="space-y-2">
+                                      {warning.suggestions!.map((suggestion) => {
+                                        const isApplying = applyingFix === `${warning.id}-${suggestion.id}`;
+                                        return (
+                                          <div key={suggestion.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-sm font-medium text-ink-800">{suggestion.title}</span>
+                                                  {suggestion.autoApplicable && (
+                                                    <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full">
+                                                      可一键应用
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {suggestion.description && (
+                                                  <p className="text-xs text-ink-500 mt-1">{suggestion.description}</p>
+                                                )}
+                                                {suggestion.suggestedText && (
+                                                  <div className="mt-2 p-2 bg-white rounded border border-paper-200">
+                                                    <p className="text-[10px] text-ink-400 mb-1">推荐内容：</p>
+                                                    <p className="text-sm text-ink-700 font-mono break-all">{suggestion.suggestedText}</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              {suggestion.autoApplicable && (
+                                                <button
+                                                  onClick={() => handleApplyFix(warning.id, suggestion.id)}
+                                                  disabled={isApplying}
+                                                  className={cn(
+                                                    'flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1',
+                                                    isApplying
+                                                      ? 'bg-paper-200 text-ink-400 cursor-wait'
+                                                      : 'bg-amber-500 text-white hover:bg-amber-600 active:scale-95'
+                                                  )}
+                                                >
+                                                  <Wrench className="w-3 h-3" />
+                                                  {isApplying ? '应用中...' : '建议修复'}
+                                                </button>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-3 pt-2 border-t border-amber-200/50">
+                                  <button
+                                    onClick={() => resolveConflict(warning.id)}
+                                    className="text-xs text-ink-500 hover:text-ink-700 flex items-center gap-1"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    标记为已处理
+                                  </button>
+                                </div>
+                              </div>
                             )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-ink-700">{warning.message}</p>
-                            {warning.lineNumber && (
-                              <p className="text-xs text-ink-400 mt-1">
-                                位置：第 {warning.lineNumber} 行
-                              </p>
-                            )}
-                            <button
-                              onClick={() => resolveConflict(warning.id)}
-                              className="mt-2 text-xs text-ink-500 hover:text-ink-700 flex items-center gap-1"
-                            >
-                              <CheckCircle2 className="w-3 h-3" />
-                              标记为已处理
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="text-center py-8">
                       <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-3" />
-                      <p className="text-ink-600 font-medium">未检测到冲突</p>
+                      <p className="text-ink-600 font-medium">
+                        {conflictFilter === 'all' ? '未检测到冲突' : `该分类暂无冲突`}
+                      </p>
                       <p className="text-sm text-ink-400 mt-1">情节和人物设定保持一致</p>
                     </div>
                   )}
 
                   {conflicts.filter(c => c.resolved).length > 0 && (
                     <div className="pt-4 border-t border-paper-200">
-                      <h4 className="text-sm font-medium text-ink-500 mb-3">已处理的警告</h4>
+                      <h4 className="text-sm font-medium text-ink-500 mb-3 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        已处理的警告
+                        <span className="text-xs font-normal text-ink-400">({conflicts.filter(c => c.resolved).length})</span>
+                      </h4>
                       <div className="space-y-2">
-                        {conflicts.filter(c => c.resolved).slice(0, 3).map((warning) => (
+                        {conflicts.filter(c => c.resolved).slice(0, 5).map((warning) => (
                           <div
                             key={warning.id}
                             className="p-3 bg-paper-100 rounded-lg opacity-60"
                           >
                             <p className="text-xs text-ink-500 line-through">{warning.message}</p>
+                            {warning.resolutionNote && (
+                              <p className="text-[10px] text-green-600 mt-1">✓ {warning.resolutionNote}</p>
+                            )}
                           </div>
                         ))}
                       </div>

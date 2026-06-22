@@ -90,6 +90,33 @@ export const api = {
       request<any[]>(`/projects/${projectId}/plot/check`, { method: 'POST', body: JSON.stringify({ chapterId }) }),
     resolve: (id: string) =>
       request<{ success: boolean }>(`/conflicts/${id}/resolve`, { method: 'PUT' }),
+    applyFix: (conflictId: string, suggestionId: string) =>
+      request<any>(`/conflicts/${conflictId}/apply-fix`, { method: 'POST', body: JSON.stringify({ suggestionId }) }),
+  },
+
+  customRules: {
+    list: (projectId: string) =>
+      request<any[]>(`/projects/${projectId}/custom-rules`),
+    get: (id: string) =>
+      request<any>(`/custom-rules/${id}`),
+    create: (projectId: string, data: any) =>
+      request<any>(`/projects/${projectId}/custom-rules`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      request<any>(`/custom-rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    toggle: (id: string) =>
+      request<{ success: boolean; isEnabled: boolean }>(`/custom-rules/${id}/toggle`, { method: 'PUT' }),
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/custom-rules/${id}`, { method: 'DELETE' }),
+  },
+
+  timeline: {
+    list: (projectId: string) =>
+      request<any[]>(`/projects/${projectId}/timeline`),
+  },
+
+  locations: {
+    list: (projectId: string) =>
+      request<any[]>(`/projects/${projectId}/locations`),
   },
 
   export: {
