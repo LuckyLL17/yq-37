@@ -8,6 +8,11 @@ import type {
   PlotPoint,
   ConflictWarning,
   PdfExportConfig,
+  EpubExportConfig,
+  MarkdownExportConfig,
+  TxtExportConfig,
+  PdfTemplateId,
+  PdfTemplateStyle,
   StickyNote,
   ChapterBranch,
   BranchVersion,
@@ -19,6 +24,84 @@ import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
 
 const dmp = new diff_match_patch();
+
+export const PDF_TEMPLATES: Record<PdfTemplateId, { name: string; description: string; style: PdfTemplateStyle }> = {
+  classic: {
+    name: '经典文学',
+    description: '深蓝封面，金色点缀，庄重典雅',
+    style: {
+      coverBg: '#1e3a5f',
+      coverTextColor: '#ffffff',
+      accentColor: '#d4af37',
+      fontFamily: '"Noto Serif SC", "SimSun", "Source Han Serif CN", serif',
+      chapterTitleColor: '#1e3a5f',
+      bodyBgColor: '#ffffff',
+      bodyTextColor: '#000000',
+      tocTitleColor: '#1e3a5f',
+      dividerStyle: '2px solid #d4af37',
+    },
+  },
+  elegant: {
+    name: '优雅古籍',
+    description: '米黄底纹，仿古风格，书卷气息',
+    style: {
+      coverBg: '#8b4513',
+      coverTextColor: '#fff8dc',
+      accentColor: '#daa520',
+      fontFamily: '"Noto Serif SC", "STKaiti", "KaiTi", serif',
+      chapterTitleColor: '#8b4513',
+      bodyBgColor: '#fffaf0',
+      bodyTextColor: '#3d2b1f',
+      tocTitleColor: '#8b4513',
+      dividerStyle: '1px double #8b4513',
+    },
+  },
+  modern: {
+    name: '现代简约',
+    description: '黑白灰调，几何线条，清爽利落',
+    style: {
+      coverBg: '#1a1a1a',
+      coverTextColor: '#ffffff',
+      accentColor: '#4a90d9',
+      fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+      chapterTitleColor: '#1a1a1a',
+      bodyBgColor: '#ffffff',
+      bodyTextColor: '#222222',
+      tocTitleColor: '#4a90d9',
+      dividerStyle: '3px solid #4a90d9',
+    },
+  },
+  minimal: {
+    name: '极简纯白',
+    description: '极简主义，大量留白，阅读舒适',
+    style: {
+      coverBg: '#fafafa',
+      coverTextColor: '#333333',
+      accentColor: '#888888',
+      fontFamily: '"Noto Sans SC", "PingFang SC", sans-serif',
+      chapterTitleColor: '#333333',
+      bodyBgColor: '#ffffff',
+      bodyTextColor: '#333333',
+      tocTitleColor: '#333333',
+      dividerStyle: '1px solid #e0e0e0',
+    },
+  },
+  warm: {
+    name: '暖调手账',
+    description: '暖色调，柔和舒适，温馨治愈',
+    style: {
+      coverBg: '#c06c5a',
+      coverTextColor: '#fff5eb',
+      accentColor: '#e8a87c',
+      fontFamily: '"Noto Serif SC", "STKaiti", serif',
+      chapterTitleColor: '#8b5a3c',
+      bodyBgColor: '#fffaf5',
+      bodyTextColor: '#5c4033',
+      tocTitleColor: '#c06c5a',
+      dividerStyle: '2px dashed #e8a87c',
+    },
+  },
+};
 
 function reviveDates(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
@@ -94,6 +177,9 @@ interface AppState {
   checkConflicts: (chapterId: string) => Promise<ConflictWarning[]>;
   resolveConflict: (conflictId: string) => Promise<void>;
   exportToPdf: (config: PdfExportConfig) => Promise<void>;
+  exportToMarkdown: (config: MarkdownExportConfig) => Promise<void>;
+  exportToTxt: (config: TxtExportConfig) => Promise<void>;
+  exportToEpub: (config: EpubExportConfig) => Promise<void>;
   createProject: (title: string, description: string) => Promise<Project>;
   createChapter: (projectId: string, title: string, parentId?: string) => Promise<Chapter>;
   updateChapterTitle: (chapterId: string, title: string) => Promise<void>;
@@ -391,6 +477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { jsPDF } = await import('jspdf');
       const html2canvas = (await import('html2canvas')).default;
+      const template = PDF_TEMPLATES[config.templateId || 'classic'].style;
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -400,23 +487,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       const contentHeight = pageHeight - margin.top - margin.bottom;
       const mmToPx = 3.7795275591;
 
-      const renderHtmlToCanvas = async (htmlContent: string, widthPx: number): Promise<HTMLCanvasElement> => {
+      const renderHtmlToCanvas = async (htmlContent: string, widthPx: number, bgColor: string): Promise<HTMLCanvasElement> => {
         const container = document.createElement('div');
         container.style.width = `${widthPx}px`;
         container.style.padding = '0';
         container.style.margin = '0';
-        container.style.fontFamily = '"Noto Serif SC", "SimSun", "Source Han Serif CN", serif';
+        container.style.fontFamily = template.fontFamily;
         container.style.fontSize = `${config.fontSize}px`;
         container.style.lineHeight = `${config.lineHeight}`;
-        container.style.color = '#000000';
-        container.style.background = '#ffffff';
+        container.style.color = template.bodyTextColor;
+        container.style.background = bgColor;
         container.style.position = 'absolute';
         container.style.left = '-9999px';
         container.style.top = '0';
-        container.innerHTML = htmlContent;
+        container.innerHTML = `<style>${config.customCss || ''}</style>` + htmlContent;
         document.body.appendChild(container);
         await new Promise(resolve => setTimeout(resolve, 50));
-        const canvas = await html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+        const canvas = await html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: bgColor });
         document.body.removeChild(container);
         return canvas;
       };
@@ -428,10 +515,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         numCanvas.height = 40;
         const numCtx = numCanvas.getContext('2d');
         if (numCtx) {
-          numCtx.fillStyle = '#ffffff';
+          numCtx.fillStyle = template.bodyBgColor;
           numCtx.fillRect(0, 0, numCanvas.width, numCanvas.height);
-          numCtx.fillStyle = '#888888';
-          numCtx.font = '16px "Noto Serif SC", "SimSun", serif';
+          numCtx.fillStyle = template.accentColor;
+          numCtx.font = `16px ${template.fontFamily}`;
           numCtx.textAlign = 'center';
           numCtx.textBaseline = 'middle';
           numCtx.fillText(`- ${num} -`, numCanvas.width / 2, numCanvas.height / 2);
@@ -448,12 +535,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const coverTitleSize = Math.max(24, config.fontSize + 20);
         const coverAuthorSize = Math.max(14, config.fontSize + 4);
         const coverHtml = `
-          <div style="width:100%;height:${(pageHeight * mmToPx)}px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:'Noto Serif SC','SimSun',serif;">
-            <h1 style="font-size:${coverTitleSize}px;font-weight:bold;text-align:center;margin-bottom:16px;color:white;padding:0 40px;">${config.title}</h1>
-            ${config.author ? `<p style="font-size:${coverAuthorSize}px;color:#d4af37;">${config.author}</p>` : ''}
-            <div style="width:60px;height:2px;background:#d4af37;margin-top:32px;"></div>
+          <div style="width:100%;height:${(pageHeight * mmToPx)}px;background:${template.coverBg};display:flex;flex-direction:column;align-items:center;justify-content:center;color:${template.coverTextColor};font-family:${template.fontFamily};">
+            <h1 style="font-size:${coverTitleSize}px;font-weight:bold;text-align:center;margin-bottom:16px;color:${template.coverTextColor};padding:0 40px;">${config.title}</h1>
+            ${config.author ? `<p style="font-size:${coverAuthorSize}px;color:${template.accentColor};">${config.author}</p>` : ''}
+            <div style="width:60px;height:2px;background:${template.accentColor};margin-top:32px;"></div>
           </div>`;
-        const canvas = await renderHtmlToCanvas(coverHtml, Math.round(pageWidth * mmToPx));
+        const canvas = await renderHtmlToCanvas(coverHtml, Math.round(pageWidth * mmToPx), template.coverBg);
         doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pageWidth, pageHeight);
         drawPageNumber(globalPageNum);
         nextPage();
@@ -466,8 +553,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           const ch = get().chapters.find(c => c.id === cid);
           return ch ? `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dotted #ccc;font-size:${config.fontSize}px;"><span>${idx + 1}. ${ch.title}</span><span>${idx + 2 + (config.includeCover ? 1 : 0)}</span></div>` : '';
         }).join('');
-        const tocHtml = `<div style="padding:0;"><h2 style="font-size:${tocTitleSize}px;font-weight:bold;color:#1e3a5f;margin-bottom:16px;">目录</h2>${tocItems}</div>`;
-        const canvas = await renderHtmlToCanvas(tocHtml, Math.round(contentWidth * mmToPx));
+        const tocHtml = `<div style="padding:0;"><h2 style="font-size:${tocTitleSize}px;font-weight:bold;color:${template.tocTitleColor};margin-bottom:16px;">目录</h2>${tocItems}</div>`;
+        const canvas = await renderHtmlToCanvas(tocHtml, Math.round(contentWidth * mmToPx), template.bodyBgColor);
         const imgHeight = Math.min((canvas.height * contentWidth) / canvas.width, contentHeight);
         doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin.left, margin.top, contentWidth, imgHeight);
         drawPageNumber(globalPageNum);
@@ -481,12 +568,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const chapterContent = chapter.content.replace(/\n/g, '<br/>');
         const chapterHtml = `
           <div style="padding:0;">
-            <h2 style="font-size:${chapterTitleSize}px;font-weight:bold;color:#1e3a5f;margin-bottom:8px;">${chapter.title}</h2>
-            <div style="width:40px;height:2px;background:#d4af37;margin-bottom:16px;"></div>
+            <h2 style="font-size:${chapterTitleSize}px;font-weight:bold;color:${template.chapterTitleColor};margin-bottom:8px;">${chapter.title}</h2>
+            <div style="width:40px;height:${template.dividerStyle.includes('dashed') ? '2' : template.dividerStyle.includes('double') ? '3' : '2'}px;background:transparent;border-bottom:${template.dividerStyle};margin-bottom:16px;"></div>
             <div style="font-size:${config.fontSize}px;line-height:${config.lineHeight};">${chapterContent}</div>
           </div>`;
         const widthPx = Math.round(contentWidth * mmToPx);
-        const canvas = await renderHtmlToCanvas(chapterHtml, widthPx);
+        const canvas = await renderHtmlToCanvas(chapterHtml, widthPx, template.bodyBgColor);
         const imgWidth = contentWidth;
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
         let yOffset = 0;
@@ -503,7 +590,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           pageCanvas.height = Math.max(1, sourceHeight);
           const ctx = pageCanvas.getContext('2d');
           if (ctx) {
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = template.bodyBgColor;
             ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
             ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
           }
@@ -516,6 +603,346 @@ export const useAppStore = create<AppState>((set, get) => ({
       doc.save(`${config.title || '小说'}.pdf`);
     } catch (e) {
       console.error('PDF export failed:', e);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  exportToMarkdown: async (config: MarkdownExportConfig) => {
+    set({ isLoading: true });
+    try {
+      let content = '';
+      if (config.includeCover) {
+        content += `# ${config.title}\n\n`;
+        if (config.author) {
+          content += `**作者：${config.author}**\n\n`;
+        }
+        content += `---\n\n`;
+      }
+      if (config.includeToc) {
+        content += `## 目录\n\n`;
+        config.chapterIds.forEach((cid, idx) => {
+          const ch = get().chapters.find(c => c.id === cid);
+          if (ch) {
+            const prefix = config.useChapterNumbers ? `${idx + 1}. ` : '';
+            content += `- ${prefix}${ch.title}\n`;
+          }
+        });
+        content += `\n---\n\n`;
+      }
+      config.chapterIds.forEach((cid, idx) => {
+        const ch = get().chapters.find(c => c.id === cid);
+        if (!ch) return;
+        const prefix = config.useChapterNumbers ? `第${idx + 1}章 ` : '';
+        content += `## ${prefix}${ch.title}\n\n${ch.content}\n\n---\n\n`;
+      });
+      if (config.customCss) {
+        content = `<!-- Custom CSS:\n${config.customCss}\n-->\n\n` + content;
+      }
+      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${config.title || '小说'}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Markdown export failed:', e);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  exportToTxt: async (config: TxtExportConfig) => {
+    set({ isLoading: true });
+    try {
+      let content = '';
+      const sep = config.chapterSeparator || '\n\n====================\n\n';
+      if (config.includeCover) {
+        content += `${config.title}\n`;
+        if (config.author) {
+          content += `作者：${config.author}\n`;
+        }
+        content += `\n${'='.repeat(40)}\n\n`;
+      }
+      if (config.includeToc) {
+        content += `目录\n\n`;
+        config.chapterIds.forEach((cid, idx) => {
+          const ch = get().chapters.find(c => c.id === cid);
+          if (ch) {
+            const prefix = config.useChapterNumbers ? `${idx + 1}. ` : '';
+            content += `${prefix}${ch.title}\n`;
+          }
+        });
+        content += `\n${'='.repeat(40)}\n\n`;
+      }
+      config.chapterIds.forEach((cid, idx) => {
+        const ch = get().chapters.find(c => c.id === cid);
+        if (!ch) return;
+        const prefix = config.useChapterNumbers ? `第${idx + 1}章 ` : '';
+        content += `${prefix}${ch.title}\n\n${ch.content}${sep}`;
+      });
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${config.title || '小说'}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('TXT export failed:', e);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  exportToEpub: async (config: EpubExportConfig) => {
+    set({ isLoading: true });
+    try {
+      const uuid = config.identifier || `urn:uuid:${crypto.randomUUID()}`;
+      const lang = config.language || 'zh-CN';
+      const date = new Date().toISOString().split('T')[0];
+
+      let chaptersHtml = '';
+      let tocNcx = '';
+      let manifestItems = '';
+      let spineItems = '';
+
+      config.chapterIds.forEach((cid, idx) => {
+        const ch = get().chapters.find(c => c.id === cid);
+        if (!ch) return;
+        const chapterFilename = `chapter_${idx + 1}.xhtml`;
+        chaptersHtml += `
+          <item id="chapter_${idx + 1}" href="${chapterFilename}" media-type="application/xhtml+xml"/>
+        `;
+        spineItems += `<itemref idref="chapter_${idx + 1}"/>`;
+        tocNcx += `
+          <navPoint id="navPoint-${idx + 1}" playOrder="${idx + 1 + (config.includeToc ? 1 : 0) + (config.includeCover ? 1 : 0)}">
+            <navLabel><text>${ch.title}</text></navLabel>
+            <content src="${chapterFilename}"/>
+          </navPoint>
+        `;
+      });
+
+      let coverHtml = '';
+      if (config.includeCover) {
+        coverHtml = `
+          <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
+        `;
+        spineItems = `<itemref idref="cover"/>` + spineItems;
+      }
+      let tocHtml = '';
+      if (config.includeToc) {
+        tocHtml = `<item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>`;
+        spineItems += `<itemref idref="toc"/>`;
+      }
+      manifestItems = coverHtml + tocHtml + chaptersHtml;
+
+      const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+
+      const contentOpf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId" xml:lang="${lang}">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>${config.title}</dc:title>
+    <dc:creator>${config.author || '匿名'}</dc:creator>
+    <dc:language>${lang}</dc:language>
+    <dc:identifier id="BookId">${uuid}</dc:identifier>
+    <dc:date>${date}</dc:date>
+    ${config.customCss ? `<meta name="custom-css" content="embedded"/>` : ''}
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    ${config.customCss ? `<item id="css" href="style.css" media-type="text/css"/>` : ''}
+    ${manifestItems}
+  </manifest>
+  <spine toc="ncx">
+    ${spineItems}
+  </spine>
+</package>`;
+
+      const tocNcxXml = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="${uuid}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>${config.title}</text></docTitle>
+  <navMap>
+    ${tocNcx}
+  </navMap>
+</ncx>`;
+
+      const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
+<head>
+  <title>封面</title>
+  ${config.customCss ? `<link rel="stylesheet" type="text/css" href="style.css"/>` : ''}
+</head>
+<body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;">
+  <h1 style="font-size:2em;font-weight:bold;">${config.title}</h1>
+  ${config.author ? `<p style="font-size:1.2em;">${config.author}</p>` : ''}
+</body>
+</html>`;
+
+      const tocXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
+<head>
+  <title>目录</title>
+  ${config.customCss ? `<link rel="stylesheet" type="text/css" href="style.css"/>` : ''}
+</head>
+<body>
+  <h1>目录</h1>
+  <ul>
+    ${config.chapterIds.map((cid, idx) => {
+      const ch = get().chapters.find(c => c.id === cid);
+      return ch ? `<li><a href="chapter_${idx + 1}.xhtml">${ch.title}</a></li>` : '';
+    }).join('')}
+  </ul>
+</body>
+</html>`;
+
+      const chapterFiles: Record<string, string> = {};
+      config.chapterIds.forEach((cid, idx) => {
+        const ch = get().chapters.find(c => c.id === cid);
+        if (!ch) return;
+        const escapedContent = ch.content
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/\n/g, '<br/>');
+        chapterFiles[`OEBPS/chapter_${idx + 1}.xhtml`] = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
+<head>
+  <title>${ch.title}</title>
+  ${config.customCss ? `<link rel="stylesheet" type="text/css" href="style.css"/>` : ''}
+</head>
+<body>
+  <h2>${ch.title}</h2>
+  <div>${escapedContent}</div>
+</body>
+</html>`;
+      });
+
+      const files: Record<string, string> = {
+        'mimetype': 'application/epub+zip',
+        'META-INF/container.xml': containerXml,
+        'OEBPS/content.opf': contentOpf,
+        'OEBPS/toc.ncx': tocNcxXml,
+        ...chapterFiles,
+      };
+      if (config.includeCover) files['OEBPS/cover.xhtml'] = coverXhtml;
+      if (config.includeToc) files['OEBPS/toc.xhtml'] = tocXhtml;
+      if (config.customCss) files['OEBPS/style.css'] = config.customCss;
+
+      const crc32Table = (() => {
+        const table = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+          let c = i;
+          for (let j = 0; j < 8; j++) {
+            c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+          }
+          table[i] = c >>> 0;
+        }
+        return table;
+      })();
+      const crc32 = (data: Uint8Array) => {
+        let crc = 0xffffffff;
+        for (const byte of data) crc = crc32Table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+        return (crc ^ 0xffffffff) >>> 0;
+      };
+
+      const encoder = new TextEncoder();
+      const localFileHeaders: Uint8Array[] = [];
+      const centralDirHeaders: Uint8Array[] = [];
+      let offset = 0;
+
+      Object.entries(files).forEach(([filename, content], idx) => {
+        const data = encoder.encode(content);
+        const crc = crc32(data);
+        const compressedSize = data.length;
+        const uncompressedSize = data.length;
+        const filenameBytes = encoder.encode(filename);
+
+        const lfh = new Uint8Array(30 + filenameBytes.length);
+        const ldv = new DataView(lfh.buffer);
+        ldv.setUint32(0, 0x04034b50, true);
+        ldv.setUint16(4, idx === 0 && filename === 'mimetype' ? 10 : 20, true);
+        ldv.setUint16(6, idx === 0 && filename === 'mimetype' ? 0 : 0, true);
+        ldv.setUint16(8, 0, true);
+        ldv.setUint16(10, 0, true);
+        ldv.setUint16(12, 0, true);
+        ldv.setUint32(14, crc, true);
+        ldv.setUint32(18, compressedSize, true);
+        ldv.setUint32(22, uncompressedSize, true);
+        ldv.setUint16(26, filenameBytes.length, true);
+        ldv.setUint16(28, 0, true);
+        lfh.set(filenameBytes, 30);
+        localFileHeaders.push(lfh, data);
+
+        const cdh = new Uint8Array(46 + filenameBytes.length);
+        const cdv = new DataView(cdh.buffer);
+        cdv.setUint32(0, 0x02014b50, true);
+        cdv.setUint16(4, 20, true);
+        cdv.setUint16(6, idx === 0 && filename === 'mimetype' ? 10 : 20, true);
+        cdv.setUint16(8, 0, true);
+        cdv.setUint16(10, 0, true);
+        cdv.setUint16(12, 0, true);
+        cdv.setUint32(14, crc, true);
+        cdv.setUint32(18, compressedSize, true);
+        cdv.setUint32(22, uncompressedSize, true);
+        cdv.setUint16(26, filenameBytes.length, true);
+        cdv.setUint16(28, 0, true);
+        cdv.setUint16(30, 0, true);
+        cdv.setUint16(32, 0, true);
+        cdv.setUint16(34, 0, true);
+        cdv.setUint32(36, 0, true);
+        cdv.setUint32(40, offset, true);
+        cdh.set(filenameBytes, 46);
+        centralDirHeaders.push(cdh);
+
+        offset += lfh.length + data.length;
+      });
+
+      const centralDirSize = centralDirHeaders.reduce((sum, arr) => sum + arr.length, 0);
+      const eocd = new Uint8Array(22);
+      const eocdv = new DataView(eocd.buffer);
+      eocdv.setUint32(0, 0x06054b50, true);
+      eocdv.setUint16(4, 0, true);
+      eocdv.setUint16(6, 0, true);
+      eocdv.setUint16(8, Object.keys(files).length, true);
+      eocdv.setUint16(10, Object.keys(files).length, true);
+      eocdv.setUint32(12, centralDirSize, true);
+      eocdv.setUint32(16, offset, true);
+      eocdv.setUint16(20, 0, true);
+
+      const totalSize = offset + centralDirSize + eocd.length;
+      const epub = new Uint8Array(totalSize);
+      let pos = 0;
+      [...localFileHeaders, ...centralDirHeaders, eocd].forEach(arr => {
+        epub.set(arr, pos);
+        pos += arr.length;
+      });
+
+      const blob = new Blob([epub], { type: 'application/epub+zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${config.title || '小说'}.epub`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('EPUB export failed:', e);
     } finally {
       set({ isLoading: false });
     }

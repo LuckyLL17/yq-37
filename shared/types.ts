@@ -143,14 +143,34 @@ export interface DiffSegment {
   content: string;
 }
 
-export interface PdfExportConfig {
+export type ExportFormat = 'pdf' | 'epub' | 'markdown' | 'txt';
+
+export type PdfTemplateId = 'classic' | 'elegant' | 'modern' | 'minimal' | 'warm';
+
+export interface PdfTemplateStyle {
+  coverBg: string;
+  coverTextColor: string;
+  accentColor: string;
+  fontFamily: string;
+  chapterTitleColor: string;
+  bodyBgColor: string;
+  bodyTextColor: string;
+  tocTitleColor: string;
+  dividerStyle: string;
+}
+
+export interface ExportConfigBase {
   projectId: string;
   chapterIds: string[];
   includeCover: boolean;
   includeToc: boolean;
-  includePageNumbers: boolean;
   title: string;
   author?: string;
+  customCss?: string;
+}
+
+export interface PdfExportConfig extends ExportConfigBase {
+  includePageNumbers: boolean;
   fontSize: number;
   lineHeight: number;
   margin: {
@@ -159,6 +179,21 @@ export interface PdfExportConfig {
     left: number;
     right: number;
   };
+  templateId: PdfTemplateId;
+}
+
+export interface EpubExportConfig extends ExportConfigBase {
+  language?: string;
+  identifier?: string;
+}
+
+export interface MarkdownExportConfig extends ExportConfigBase {
+  useChapterNumbers: boolean;
+}
+
+export interface TxtExportConfig extends ExportConfigBase {
+  useChapterNumbers: boolean;
+  chapterSeparator: string;
 }
 
 export type StickyNoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange' | 'purple';
