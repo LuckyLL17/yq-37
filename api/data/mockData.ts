@@ -389,14 +389,6 @@ export const mockCharacters: Character[] = [
         type: '上下级',
         description: '舰长对林远十分信任，常采纳他的建议',
       },
-      {
-        id: 'rel-6',
-        characterId: 'char-1',
-        targetId: 'char-4',
-        target: undefined as any,
-        type: '敌对',
-        description: '在重大决策上与王磊存在严重分歧，时常爆发争论',
-      },
     ],
     appearances: [
       {
@@ -447,22 +439,6 @@ export const mockCharacters: Character[] = [
         type: '恋人',
         description: '与林远是恋人关系',
       },
-      {
-        id: 'rel-4',
-        characterId: 'char-2',
-        targetId: 'char-3',
-        target: undefined as any,
-        type: '上下级',
-        description: '向舰长汇报医疗部门工作',
-      },
-      {
-        id: 'rel-5',
-        characterId: 'char-2',
-        targetId: 'char-4',
-        target: undefined as any,
-        type: '朋友',
-        description: '在工作上互相支持，私下关系不错',
-      },
     ],
     appearances: [
       {
@@ -496,40 +472,7 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [
-      {
-        id: 'rel-7',
-        characterId: 'char-3',
-        targetId: 'char-1',
-        target: undefined as any,
-        type: '上下级',
-        description: '作为舰长直接管辖林远',
-      },
-      {
-        id: 'rel-8',
-        characterId: 'char-3',
-        targetId: 'char-2',
-        target: undefined as any,
-        type: '上下级',
-        description: '作为舰长直接管辖苏婉',
-      },
-      {
-        id: 'rel-9',
-        characterId: 'char-3',
-        targetId: 'char-4',
-        target: undefined as any,
-        type: '上下级',
-        description: '舰长与大副的直接从属关系',
-      },
-      {
-        id: 'rel-10',
-        characterId: 'char-3',
-        targetId: 'char-5',
-        target: undefined as any,
-        type: '敌对',
-        description: '与神秘文明处于未知的紧张对峙状态',
-      },
-    ],
+    relationships: [],
     appearances: [
       {
         id: 'app-4',
@@ -562,32 +505,7 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [
-      {
-        id: 'rel-11',
-        characterId: 'char-4',
-        targetId: 'char-3',
-        target: undefined as any,
-        type: '上下级',
-        description: '作为大副直接向舰长汇报',
-      },
-      {
-        id: 'rel-12',
-        characterId: 'char-4',
-        targetId: 'char-1',
-        target: undefined as any,
-        type: '敌对',
-        description: '在探索还是保守的立场上与林远对立',
-      },
-      {
-        id: 'rel-13',
-        characterId: 'char-4',
-        targetId: 'char-2',
-        target: undefined as any,
-        type: '朋友',
-        description: '苏婉的老同事，在工作中经常合作',
-      },
-    ],
+    relationships: [],
     appearances: [
       {
         id: 'app-5',
@@ -620,24 +538,7 @@ export const mockCharacters: Character[] = [
       voiceName: '默认男声',
       lang: 'zh-CN',
     },
-    relationships: [
-      {
-        id: 'rel-14',
-        characterId: 'char-5',
-        targetId: 'char-1',
-        target: undefined as any,
-        type: '师徒',
-        description: '神秘文明在远古时期通过基因改造成为人类的"造物主"，与林远有特殊的心灵联系',
-      },
-      {
-        id: 'rel-15',
-        characterId: 'char-5',
-        targetId: 'char-3',
-        target: undefined as any,
-        type: '敌对',
-        description: '与人类船员处于未知的对峙状态',
-      },
-    ],
+    relationships: [],
     appearances: [],
     createdAt: new Date('2025-08-20'),
     updatedAt: new Date('2026-06-10'),
@@ -904,181 +805,339 @@ export const mockStickyNotes: StickyNote[] = [
   },
 ];
 
+const chapter1Content = `深夜，"星辰号"空间站的观测室里，林远正盯着全息屏幕上的星图。
+
+三十二年了，从地球出发已经三十二年。
+
+"舰长，"林远的声音平静，"前方三光时处探测到异常能量波动，频率...和起源信号高度相似。"
+
+苏婉走进观测室，她的脚步很轻。这位生命科学主管总是这样，像猫一样安静。
+
+"确定吗？"她问。
+
+林远点头，手指在屏幕上滑动，调出一组复杂的波形图。"百分之九十七的匹配度。我们找了这么久的起源星球，可能就在那里。"
+
+苏婉走到他身边，目光落在那些跳动的波形上。她的心跳有些加速，但脸上依然保持着科学家的冷静。
+
+"通知舰长了吗？"
+
+"正在通知。"
+
+话音刚落，通讯器里传来舰长的声音："林远，苏婉，到指挥室来。"`;
+
+const chapter1SuspenseContent = `深夜，"星辰号"空间站的观测室里，林远正盯着全息屏幕上的星图。
+
+三十二年了，从地球出发已经三十二年。
+
+空间站的环形走廊里，应急灯忽明忽暗，投下诡异的阴影。空气循环系统发出低沉的嗡鸣，像是某种巨大生物的呼吸。
+
+"舰长，"林远的声音有些发紧，"前方三光时处探测到异常能量波动，频率...和起源信号高度相似。"
+
+苏婉走进观测室，她的脚步很轻，但在这死寂的空间站里，每一步都像是踩在人的神经上。
+
+"确定吗？"她的声音压得很低，仿佛害怕惊动什么。
+
+林远点头，手指在屏幕上滑动，调出一组复杂的波形图。那些波形像脉搏一样跳动，带着一种诡异的生命力。
+
+"百分之九十七的匹配度。我们找了这么久的起源星球，可能就在那里。"
+
+苏婉走到他身边，目光落在那些跳动的波形上。她的心跳有些加速，手心渗出冷汗。
+
+"你有没有觉得..."她咽了口唾沫，"这些波形...像是在看着我们？"
+
+林远愣了一下，随即苦笑："你最近科幻小说看多了吧。"
+
+话虽这么说，但当他再次看向屏幕时，那些波形确实像是有意识般地改变了频率。
+
+"通知舰长了吗？"苏婉问。
+
+"正在通知。"
+
+话音刚落，通讯器里传来舰长的声音，但那声音...有些不对劲。
+
+"林远...苏婉...到...指挥室...来..."
+
+声音断断续续，夹杂着刺耳的杂音。不像是通讯干扰，倒像是...有人在模仿舰长的声音。
+
+两人对视一眼，都从对方眼中看到了恐惧。`;
+
+const chapter1SuWanContent = `我是苏婉，"星辰号"的生命科学主管。
+
+深夜，我从休眠舱中醒来，心脏还在怦怦直跳。
+
+又是那个梦。梦里有一颗蓝色的星球，有风吹过麦浪的声音，还有一个模糊的身影在向我招手。
+
+我知道那是起源星球——我们这趟旅程的目的地。但为什么梦里的感觉如此熟悉？仿佛我曾经去过那里。
+
+我走到观测室，想找林远说说话。他总是在深夜还待在那里，像个守夜人。
+
+"林远，"我轻轻叫他的名字。
+
+他转过身，脸上带着我熟悉的那种专注神情。"苏婉？你怎么醒了？"
+
+"睡不着。"我走到他身边，看着全息屏幕上的星图，"又梦到起源星了。"
+
+林远沉默了一下，然后说："我也是。最近越来越频繁了。"
+
+我们对视了一眼，都没有继续说下去。有些事情，说出来就变味了。
+
+"舰长呢？"我换了个话题。
+
+"在他的舱室里吧。最近他的状态不太好。"林远的声音里有些担忧。
+
+我点点头。舰长的状态，全船的人都看在眼里。三十二年的旅程，对任何人都是煎熬。
+
+就在这时，林远的屏幕突然亮了起来，一组数据跳了出来。
+
+他的表情立刻变了。
+
+"怎么了？"我问。
+
+"前方三光时处，"他的声音有些颤抖，"探测到异常能量波动，和起源信号的匹配度...百分之九十七。"
+
+我感觉自己的呼吸停了一拍。
+
+三十二年。我们找了三十二年的答案，终于要出现了吗？
+
+"通知舰长吧。"我听到自己的声音在发抖。
+
+林远点头，接通了通讯。
+
+"舰长，我们有发现了。"`;
+
+const chapter2Content = `指挥室里，舰长背对着他们，站在巨大的观景窗前。
+
+窗外是无尽的星海。
+
+"你们确定？"舰长的声音低沉。
+
+"数据不会错。"林远说。
+
+舰长转过身来。这位曾经意气风发的舰长，如今两鬓已经斑白。三十二年的时间，在他身上留下了深刻的痕迹。
+
+"调整航线，"他说，"向着信号源前进。"
+
+"可是舰长，"苏婉犹豫了一下，"我们的燃料储备..."
+
+"我知道。"舰长打断她，"但这是我们唯一的机会。如果起源星球真的在那里，一切都是值得的。"
+
+林远和苏婉对视一眼，都看到了对方眼中的坚定。
+
+"明白。"
+
+"星辰号"开始转向，向着未知的方向前进。
+
+在他们看不见的黑暗中，有什么东西正在苏醒。`;
+
+const chapter2MergedContent = `指挥室里，舰长背对着他们，站在巨大的观景窗前。
+
+窗外是无尽的星海，冰冷而沉默。
+
+"你们确定？"舰长的声音低沉，带着一丝不易察觉的颤抖。
+
+"数据不会错。"林远说，他的声音也有些沙哑。
+
+舰长转过身来。这位曾经意气风发的舰长，如今两鬓已经斑白。三十二年的时间，在他身上留下了深刻的痕迹。
+
+他的眼睛里布满血丝，看起来已经很久没有好好休息了。
+
+"调整航线，"他终于开口，"向着信号源前进。"
+
+"可是舰长，"苏婉犹豫了一下，"我们的燃料储备...只够一次减速了。"
+
+"我知道。"舰长打断她，语气不容置疑，"但这是我们唯一的机会。如果起源星球真的在那里，一切都是值得的。"
+
+林远和苏婉对视一眼，都看到了对方眼中的坚定。三十二年的等待，不就是为了这一刻吗？
+
+"明白。"
+
+"星辰号"开始转向，庞大的船体在惯性中缓缓转动，像一头沉睡的巨兽终于苏醒。
+
+向着未知的方向，向着传说中的起源，前进。
+
+在他们看不见的黑暗深处，有什么东西...正在苏醒。`;
+
 export const mockChapterBranches: ChapterBranch[] = [
   {
     id: 'branch-ch1-main',
     chapterId: 'chapter-1',
     name: '主线',
-    description: '第一章的主线分支，代表正式发布的内容',
+    description: '第一章主线剧情分支',
     isMain: true,
     status: 'active',
     creatorId: 'user-1',
     creator: mockUsers[0],
-    currentContent: mockChapters[0].content,
-    wordCount: 587,
-    createdAt: new Date('2025-06-10'),
-    updatedAt: new Date('2026-06-12'),
-    color: '#627d98',
-  },
-  {
-    id: 'branch-ch1-experiment-1',
-    chapterId: 'chapter-1',
-    name: '实验分支：悬疑氛围强化',
-    description: '尝试增强启航前的悬疑氛围，增加林远对未知的不安感',
-    parentBranchId: 'branch-ch1-main',
-    baseVersionId: 'version-1-3',
-    isMain: false,
-    status: 'active',
-    creatorId: 'user-2',
-    creator: mockUsers[1],
-    currentContent: `公元2157年，地球轨道。
-
-"星辰号"静静停泊在联合太空站的三号船坞，这艘长达三公里的星际殖民舰是人类有史以来建造的最伟大的工程奇迹。它承载着十万名精选的殖民者，以及人类文明延续的全部希望。
-
-林远站在观景窗前，望着那颗蓝色的星球，心中百感交集。作为"星辰号"的首席天文官，他知道这一去，便是永别。
-
-但今晚，他总觉得有些不对劲。星空中仿佛有什么东西在注视着他们，那种被窥探的感觉让他脊背发凉。
-
-"在想什么？"身后传来熟悉的声音。
-
-林远没有回头，轻声说道："在想我们这一走，地球上的人会怎么看我们。是勇士，还是逃兵？"
-
-苏婉走到他身边，和他并肩而立。这位"星辰号"的医疗主管有着一双温柔却坚定的眼睛。
-
-"历史会给出答案的，"她轻轻说，"而我们的使命，是让人类这个名字，不再局限于这颗星球。"
-
-林远想说些什么，但那种不安的感觉越来越强烈。他望向深空，仿佛在无尽的黑暗中，有一双眼睛正在回望。
-
-通讯器突然响起，舰长的声音传遍全舰："所有人员请注意，启航倒计时十分钟。请各部门做好最终检查。"
-
-林远深深吸了一口气，握住了苏婉的手。
-
-"走吧，"他说，"该去创造历史了。"
-
-随着倒计时的结束，"星辰号"的引擎发出低沉的轰鸣。在亿万地球人的注视下，这艘承载着人类未来的巨舰，缓缓驶向了那片无垠的星海。
-
-前方，是未知；身后，是故乡。
-
-而属于他们的传奇，才刚刚开始。`,
-    wordCount: 702,
-    createdAt: new Date('2026-06-13'),
+    currentContent: chapter1Content,
+    wordCount: chapter1Content.replace(/\s/g, '').length,
+    createdAt: new Date('2026-05-01'),
     updatedAt: new Date('2026-06-15'),
     color: '#d4af37',
   },
   {
-    id: 'branch-ch1-experiment-2',
+    id: 'branch-ch1-suspense',
     chapterId: 'chapter-1',
-    name: '实验分支：苏婉视角',
-    description: '尝试从苏婉的视角重写开场，展现她内心的担忧与坚强',
+    name: '悬疑氛围强化',
+    description: '尝试在第一章加入更多悬疑和惊悚元素，探索不同的叙事风格',
     parentBranchId: 'branch-ch1-main',
-    baseVersionId: 'version-1-3',
+    isMain: false,
+    status: 'active',
+    creatorId: 'user-2',
+    creator: mockUsers[1],
+    currentContent: chapter1SuspenseContent,
+    wordCount: chapter1SuspenseContent.replace(/\s/g, '').length,
+    createdAt: new Date('2026-06-05'),
+    updatedAt: new Date('2026-06-18'),
+    color: '#7c3aed',
+  },
+  {
+    id: 'branch-ch1-suwan-pov',
+    chapterId: 'chapter-1',
+    name: '苏婉视角',
+    description: '以苏婉为第一人称重新叙述第一章，探索不同视角的叙事效果',
+    parentBranchId: 'branch-ch1-main',
     isMain: false,
     status: 'active',
     creatorId: 'user-3',
     creator: mockUsers[2],
-    currentContent: `公元2157年，地球轨道。
-
-苏婉站在"星辰号"的医疗舱里，最后检查了一遍冷冻休眠设备的参数。作为这艘星际殖民舰的医疗主管，她肩负着十万殖民者的健康安全。
-
-一切正常。但她的心，却无法平静。
-
-她走到观景窗前，望着那颗蓝色的星球。这是她最后一次以"地球人"的身份看它了。
-
-身后传来脚步声，她不用回头也知道是谁。
-
-"在想什么？"林远的声音在身后响起。
-
-苏婉没有回答，只是望着那颗星球，轻声说："在想我爸。他当年也是宇航员，可惜，他没能走这么远。"
-
-林远走到她身边，和她并肩而立。
-
-"他会为你骄傲的。"
-
-"也许吧，"苏婉轻轻笑了笑，"但我更希望他能活着看到这一天。"
-
-她的目光越过地球，望向那片无垠的深空。那里有未知，有危险，也有人类的希望。
-
-作为医疗主管，她比任何人都清楚这次航行的风险——辐射、疾病、心理问题、未知的外星环境……任何一个都可能致命。
-
-但她还是来了。因为她相信，人类值得一个更广阔的未来。
-
-通讯器突然响起，舰长的声音传遍全舰："所有人员请注意，启航倒计时十分钟。请各部门做好最终检查。"
-
-苏婉深吸一口气，握住了林远的手。
-
-"走吧，"她说，"该去创造历史了。"
-
-随着倒计时的结束，"星辰号"的引擎发出低沉的轰鸣。在亿万地球人的注视下，这艘承载着人类未来的巨舰，缓缓驶向了那片无垠的星海。
-
-前方，是未知；身后，是故乡。
-
-而属于他们的传奇，才刚刚开始。`,
-    wordCount: 623,
-    createdAt: new Date('2026-06-14'),
-    updatedAt: new Date('2026-06-15'),
-    color: '#7c3aed',
+    currentContent: chapter1SuWanContent,
+    wordCount: chapter1SuWanContent.replace(/\s/g, '').length,
+    createdAt: new Date('2026-06-10'),
+    updatedAt: new Date('2026-06-19'),
+    color: '#059669',
   },
   {
     id: 'branch-ch2-main',
     chapterId: 'chapter-2',
     name: '主线',
-    description: '第二章的主线分支',
+    description: '第二章主线剧情分支',
     isMain: true,
     status: 'active',
     creatorId: 'user-1',
     creator: mockUsers[0],
-    currentContent: mockChapters[1].content,
-    wordCount: 723,
-    createdAt: new Date('2025-07-15'),
-    updatedAt: new Date('2026-06-14'),
-    color: '#627d98',
+    currentContent: chapter2Content,
+    wordCount: chapter2Content.replace(/\s/g, '').length,
+    createdAt: new Date('2026-05-03'),
+    updatedAt: new Date('2026-06-10'),
+    color: '#d4af37',
   },
   {
-    id: 'branch-ch2-merged-1',
+    id: 'branch-ch2-tone-exp',
     chapterId: 'chapter-2',
-    name: '已合并：增加苏婉的医学视角',
-    description: '在信号分析场景中加入苏婉从医学角度的分析，已合并入主线',
+    name: '氛围深化实验',
+    description: '已合并的实验分支，用于深化第二章的沉重氛围',
     parentBranchId: 'branch-ch2-main',
-    baseVersionId: 'version-2-2',
     isMain: false,
     status: 'merged',
     creatorId: 'user-2',
     creator: mockUsers[1],
-    currentContent: mockChapters[1].content,
-    wordCount: 723,
-    createdAt: new Date('2026-06-10'),
-    updatedAt: new Date('2026-06-12'),
-    mergedAt: new Date('2026-06-12'),
-    color: '#22c55e',
+    currentContent: chapter2MergedContent,
+    wordCount: chapter2MergedContent.replace(/\s/g, '').length,
+    createdAt: new Date('2026-05-20'),
+    updatedAt: new Date('2026-06-08'),
+    mergedAt: new Date('2026-06-08'),
+    color: '#2563eb',
   },
 ];
 
 export const mockBranchVersions: BranchVersion[] = [
   {
-    id: 'branch-ver-1-1',
-    branchId: 'branch-ch1-experiment-1',
-    content: mockChapterBranches[1].currentContent,
-    authorId: 'user-2',
-    author: mockUsers[1],
-    changeSummary: '创建悬疑分支初稿，增加被注视的感觉描写',
-    createdAt: new Date('2026-06-13T10:00:00'),
+    id: 'bv-1',
+    branchId: 'branch-ch1-main',
+    content: chapter1Content,
+    authorId: 'user-1',
+    author: mockUsers[0],
+    changeSummary: '创建初始版本',
+    createdAt: new Date('2026-05-01'),
+    wordCount: chapter1Content.replace(/\s/g, '').length,
   },
   {
-    id: 'branch-ver-1-2',
-    branchId: 'branch-ch1-experiment-1',
-    content: mockChapterBranches[1].currentContent,
-    authorId: 'user-2',
-    author: mockUsers[1],
-    changeSummary: '调整心理描写的节奏，让悬疑感更自然',
-    createdAt: new Date('2026-06-15T14:30:00'),
+    id: 'bv-2',
+    branchId: 'branch-ch1-main',
+    content: chapter1Content,
+    authorId: 'user-1',
+    author: mockUsers[0],
+    changeSummary: '优化对话节奏',
+    createdAt: new Date('2026-05-15'),
+    wordCount: chapter1Content.replace(/\s/g, '').length,
   },
   {
-    id: 'branch-ver-2-1',
-    branchId: 'branch-ch1-experiment-2',
-    content: mockChapterBranches[2].currentContent,
+    id: 'bv-3',
+    branchId: 'branch-ch1-main',
+    content: chapter1Content,
+    authorId: 'user-1',
+    author: mockUsers[0],
+    changeSummary: '完善结尾悬念',
+    createdAt: new Date('2026-06-15'),
+    wordCount: chapter1Content.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-4',
+    branchId: 'branch-ch1-suspense',
+    content: chapter1SuspenseContent,
+    authorId: 'user-2',
+    author: mockUsers[1],
+    changeSummary: '创建悬疑版第一章',
+    createdAt: new Date('2026-06-05'),
+    wordCount: chapter1SuspenseContent.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-5',
+    branchId: 'branch-ch1-suspense',
+    content: chapter1SuspenseContent,
+    authorId: 'user-2',
+    author: mockUsers[1],
+    changeSummary: '增强结尾恐怖氛围',
+    createdAt: new Date('2026-06-18'),
+    wordCount: chapter1SuspenseContent.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-6',
+    branchId: 'branch-ch1-suwan-pov',
+    content: chapter1SuWanContent,
     authorId: 'user-3',
     author: mockUsers[2],
-    changeSummary: '从苏婉视角重写开场，加入她父亲的背景故事',
-    createdAt: new Date('2026-06-14T09:15:00'),
+    changeSummary: '苏婉视角初稿',
+    createdAt: new Date('2026-06-10'),
+    wordCount: chapter1SuWanContent.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-7',
+    branchId: 'branch-ch1-suwan-pov',
+    content: chapter1SuWanContent,
+    authorId: 'user-3',
+    author: mockUsers[2],
+    changeSummary: '完善内心独白',
+    createdAt: new Date('2026-06-19'),
+    wordCount: chapter1SuWanContent.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-8',
+    branchId: 'branch-ch2-main',
+    content: chapter2Content,
+    authorId: 'user-1',
+    author: mockUsers[0],
+    changeSummary: '创建初始版本',
+    createdAt: new Date('2026-05-03'),
+    wordCount: chapter2Content.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-9',
+    branchId: 'branch-ch2-main',
+    content: chapter2MergedContent,
+    authorId: 'user-1',
+    author: mockUsers[0],
+    changeSummary: '合并氛围深化实验分支',
+    createdAt: new Date('2026-06-08'),
+    wordCount: chapter2MergedContent.replace(/\s/g, '').length,
+  },
+  {
+    id: 'bv-10',
+    branchId: 'branch-ch2-tone-exp',
+    content: chapter2MergedContent,
+    authorId: 'user-2',
+    author: mockUsers[1],
+    changeSummary: '深化氛围实验完成',
+    createdAt: new Date('2026-06-07'),
+    wordCount: chapter2MergedContent.replace(/\s/g, '').length,
   },
 ];

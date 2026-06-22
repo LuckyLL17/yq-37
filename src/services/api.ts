@@ -110,41 +110,30 @@ export const api = {
       request<any>(`/projects/${projectId}/notes/reorder`, { method: 'PUT', body: JSON.stringify({ noteIds }) }),
   },
 
-  dashboard: {
-    get: (projectId: string) => request<any>(`/projects/${projectId}/dashboard`),
-  },
-
   branches: {
     list: (chapterId: string) => request<any[]>(`/chapters/${chapterId}/branches`),
-    get: (id: string) => request<any>(`/branches/${id}`),
+    get: (branchId: string) => request<any>(`/branches/${branchId}`),
     create: (chapterId: string, data: {
       name: string;
       description?: string;
       parentBranchId?: string;
-      baseVersionId?: string;
-      creatorId: string;
       color?: string;
-    }) => request<any>(`/chapters/${chapterId}/branches`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: {
-      name?: string;
-      description?: string;
-      currentContent?: string;
-      status?: 'active' | 'merged' | 'archived';
-    }) => request<any>(`/branches/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => request<{ success: boolean }>(`/branches/${id}`, { method: 'DELETE' }),
-    listVersions: (branchId: string) => request<any[]>(`/branches/${branchId}/versions`),
-    createVersion: (branchId: string, data: {
-      content: string;
-      authorId: string;
-      changeSummary?: string;
-    }) => request<any>(`/branches/${branchId}/versions`, { method: 'POST', body: JSON.stringify(data) }),
-    merge: (sourceBranchId: string, data: {
-      targetBranchId: string;
-      resolutions?: Record<string, string>;
-      customMergedContent?: string;
-    }) => request<any>(`/branches/${sourceBranchId}/merge`, { method: 'POST', body: JSON.stringify(data) }),
-    diff: (branchAId: string, branchBId: string) => request<any>(
-      `/branches/diff?branchAId=${encodeURIComponent(branchAId)}&branchBId=${encodeURIComponent(branchBId)}`
-    ),
+      baseVersionId?: string;
+    }) =>
+      request<any>(`/chapters/${chapterId}/branches`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (branchId: string, data: { name?: string; description?: string; status?: string }) =>
+      request<any>(`/branches/${branchId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (branchId: string) =>
+      request<{ success: boolean }>(`/branches/${branchId}`, { method: 'DELETE' }),
+    versions: (branchId: string) => request<any[]>(`/branches/${branchId}/versions`),
+    createVersion: (branchId: string, data: { content: string; summary: string }) =>
+      request<any>(`/branches/${branchId}/versions`, { method: 'POST', body: JSON.stringify(data) }),
+    merge: (sourceBranchId: string, targetBranchId: string, resolutions?: Record<string, string>) =>
+      request<any>(`/branches/${sourceBranchId}/merge`, {
+        method: 'POST',
+        body: JSON.stringify({ targetBranchId, resolutions }),
+      }),
+    diff: (branchAId: string, branchBId: string) =>
+      request<any>(`/branches/diff?branchAId=${branchAId}&branchBId=${branchBId}`),
   },
 };

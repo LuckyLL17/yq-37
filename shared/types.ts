@@ -117,7 +117,6 @@ export interface PlotPoint {
   relatedChapterIds: string[];
   relatedCharacterIds: string[];
   hints: PlotHint[];
-  timelinePosition?: number;
   createdAt: Date;
 }
 
@@ -227,70 +226,6 @@ export interface DashboardData {
   chapterRadars: DashboardChapterRadar[];
 }
 
-export type NarrativeStructureType = 'three-act' | 'hero-journey' | 'save-the-cat' | 'freytag' | 'custom';
-
-export interface EmotionPoint {
-  position: number;
-  intensity: number;
-}
-
-export interface BeatCard {
-  id: string;
-  chapterId: string;
-  structureType: NarrativeStructureType;
-  act?: string;
-  beatKey?: string;
-  title: string;
-  description: string;
-  goal: string;
-  conflict: string;
-  turningPoint: string;
-  emotionCurve: EmotionPoint[];
-  order: number;
-  color: string;
-  relatedCharacterIds: string[];
-  relatedPlotPointIds: string[];
-  estimatedWords: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface StructureTemplate {
-  type: NarrativeStructureType;
-  name: string;
-  description: string;
-  acts: StructureAct[];
-}
-
-export interface StructureAct {
-  key: string;
-  name: string;
-  description: string;
-  beats: StructureBeat[];
-}
-
-export interface StructureBeat {
-  key: string;
-  name: string;
-  description: string;
-  suggestedGoal: string;
-  suggestedConflict: string;
-  suggestedTurningPoint: string;
-  defaultEmotion: EmotionPoint[];
-  color: string;
-}
-
-export interface ChapterOutline {
-  id: string;
-  chapterId: string;
-  projectId: string;
-  structureType: NarrativeStructureType;
-  beats: BeatCard[];
-  summary: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export type BranchStatus = 'active' | 'merged' | 'archived';
 
 export interface ChapterBranch {
@@ -320,6 +255,7 @@ export interface BranchVersion {
   author: User;
   changeSummary: string;
   createdAt: Date;
+  wordCount: number;
 }
 
 export interface ConflictBlock {
@@ -328,21 +264,21 @@ export interface ConflictBlock {
   endIndex: number;
   baseContent: string;
   branchContent: string;
-  resolvedContent?: string;
   resolution: 'pending' | 'keep-base' | 'keep-branch' | 'custom';
+  customContent?: string;
 }
 
 export interface MergeResult {
   success: boolean;
   hasConflicts: boolean;
+  conflicts: ConflictBlock[];
   mergedContent?: string;
-  conflicts?: ConflictBlock[];
   message?: string;
 }
 
 export interface BranchDiff {
-  branchA: ChapterBranch;
-  branchB: ChapterBranch;
-  diffs: DiffSegment[];
+  branchAId: string;
+  branchBId: string;
+  diffs: Array<[number, string]>;
   wordCountDelta: number;
 }

@@ -16,7 +16,6 @@ import type {
   PdfExportConfig,
   ConflictWarning,
   StickyNote,
-  DashboardData,
   ChapterBranch,
   BranchVersion,
   ConflictBlock,
@@ -262,303 +261,6 @@ router.get('/versions/diff', (req: Request, res: Response) => {
   }
   const diff = dmp.diff_main(oldContent, newContent);
   res.json(diff);
-});
-
-// ==================== Branches ====================
-
-router.get('/chapters/:id/branches', (req: Request, res: Response) => {
-  const branches = mockChapterBranches
-    .filter(b => b.chapterId === req.params.id)
-    .sort((a, b) => {
-      if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
-      return b.updatedAt.getTime() - a.updatedAt.getTime();
-    });
-  res.json(branches);
-});
-
-router.get('/branches/:id', (req: Request, res: Response) => {
-  const branch = mockChapterBranches.find(b => b.id === req.params.id);
-  if (!branch) return res.status(404).json({ error: 'Branch not found' });
-  res.json(branch);
-});
-
-router.post('/chapters/:id/branches', (req: Request, res: Response) => {
-  const { name, description, parentBranchId, baseVersionId, creatorId, color } = req.body;
-  const chapter = mockChapters.find(c => c.id === req.params.id);
-  if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
-  const creator = mockUsers.find(u => u.id === creatorId);
-
-  let baseContent = chapter.content;
-  if (parentBranchId) {
-    const parentBranch = mockChapterBranches.find(b => b.id === parentBranchId);
-    if (parentBranch) {
-      baseContent = parentBranch.currentContent;
-    }
-  } else if (baseVersionId) {
-    const baseVersion = mockChapterVersions.find(v => v.id === baseVersionId);
-    if (baseVersion) {
-      baseContent = baseVersion.content;
-    }
-  }
-
-  const branchColors = ['#d4af37', '#7c3aed', '#059669', '#dc2626', '#2563eb', '#ea580c', '#0891b2'];
-  const usedColors = mockChapterBranches
-    .filter(b => b.chapterId === req.params.id && !b.isMain)
-    .map(b => b.color);
-  const availableColors = branchColors.filter(c => !usedColors.includes(c));
-  const finalColor = color || availableColors[0] || branchColors[Math.floor(Math.random() * branchColors.length)];
-
-  const newBranch: ChapterBranch = {
-    id: `branch-${Date.now()}`,
-    chapterId: req.params.id,
-    name: name || '新实验分支',
-    description: description || '',
-    ...(parentBranchId && { parentBranchId }),
-    ...(baseVersionId && { baseVersionId }),
-    isMain: false,
-    status: 'active',
-    creatorId,
-    creator: creator!,
-    currentContent: baseContent,
-    wordCount: baseContent.replace(/\s/g, '').length,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    color: finalColor,
-  };
-  mockChapterBranches.push(newBranch);
-  res.status(201).json(newBranch);
-});
-
-router.put('/branches/:id', (req: Request, res: Response) => {
-  const { name, description, currentContent, status } = req.body;
-  const index = mockChapterBranches.findIndex(b => b.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: 'Branch not found' });
-
-  const branch = mockChapterBranches[index];
-  if (branch.isMain && status === 'archived') {
-    return res.status(400).json({ error: 'Cannot archive main branch' });
-  }
-
-  mockChapterBranches[index] = {
-    ...branch,
-    ...(name !== undefined && { name }),
-    ...(description !== undefined && { description }),
-    ...(currentContent !== undefined && {
-      currentContent,
-      wordCount: currentContent.replace(/\s/g, '').length,
-    }),
-    ...(status !== undefined && {
-      status: status as BranchStatus,
-      ...(status === 'merged' && { mergedAt: new Date() }),
-    }),
-    updatedAt: new Date(),
-  };
-  res.json(mockChapterBranches[index]);
-});
-
-router.delete('/branches/:id', (req: Request, res: Response) => {
-  const index = mockChapterBranches.findIndex(b => b.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: 'Branch not found' });
-  if (mockChapterBranches[index].isMain) {
-    return res.status(400).json({ error: 'Cannot delete main branch' });
-  }
-
-  const branchId = req.params.id;
-  mockChapterBranches.splice(index, 1);
-
-  for (let i = mockBranchVersions.length - 1; i >= 0; i--) {
-    if (mockBranchVersions[i].branchId === branchId) {
-      mockBranchVersions.splice(i, 1);
-    }
-  }
-
-  res.json({ success: true });
-});
-
-router.get('/branches/:id/versions', (req: Request, res: Response) => {
-  const versions = mockBranchVersions
-    .filter(v => v.branchId === req.params.id)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  res.json(versions);
-});
-
-router.post('/branches/:id/versions', (req: Request, res: Response) => {
-  const { content, authorId, changeSummary } = req.body;
-  const branch = mockChapterBranches.find(b => b.id === req.params.id);
-  if (!branch) return res.status(404).json({ error: 'Branch not found' });
-  const author = mockUsers.find(u => u.id === authorId);
-
-  const newVersion: BranchVersion = {
-    id: `branch-ver-${Date.now()}`,
-    branchId: req.params.id,
-    content,
-    authorId,
-    author: author!,
-    changeSummary: changeSummary || '更新内容',
-    createdAt: new Date(),
-  };
-  mockBranchVersions.push(newVersion);
-
-  const branchIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
-  if (branchIndex !== -1) {
-    mockChapterBranches[branchIndex] = {
-      ...mockChapterBranches[branchIndex],
-      currentContent: content,
-      wordCount: content.replace(/\s/g, '').length,
-      updatedAt: new Date(),
-    };
-  }
-
-  res.status(201).json(newVersion);
-});
-
-router.post('/branches/:id/merge', (req: Request, res: Response) => {
-  const { targetBranchId, resolutions, customMergedContent } = req.body;
-  const sourceBranch = mockChapterBranches.find(b => b.id === req.params.id);
-  const targetBranch = mockChapterBranches.find(b => b.id === targetBranchId);
-
-  if (!sourceBranch) return res.status(404).json({ error: 'Source branch not found' });
-  if (!targetBranch) return res.status(404).json({ error: 'Target branch not found' });
-  if (targetBranch.status !== 'active') {
-    return res.status(400).json({ error: 'Target branch is not active' });
-  }
-
-  if (customMergedContent) {
-    const targetIndex = mockChapterBranches.findIndex(b => b.id === targetBranchId);
-    if (targetIndex !== -1) {
-      mockChapterBranches[targetIndex] = {
-        ...mockChapterBranches[targetIndex],
-        currentContent: customMergedContent,
-        wordCount: customMergedContent.replace(/\s/g, '').length,
-        updatedAt: new Date(),
-      };
-    }
-    const sourceIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
-    if (sourceIndex !== -1) {
-      mockChapterBranches[sourceIndex] = {
-        ...mockChapterBranches[sourceIndex],
-        status: 'merged',
-        mergedAt: new Date(),
-        updatedAt: new Date(),
-      };
-    }
-    res.json({ success: true, hasConflicts: false, mergedContent: customMergedContent });
-    return;
-  }
-
-  const diffResult = dmp.diff_main(targetBranch.currentContent, sourceBranch.currentContent);
-  dmp.diff_cleanupSemantic(diffResult);
-
-  const conflicts: ConflictBlock[] = [];
-  let mergedContent = '';
-  let hasConflicts = false;
-  let conflictIndex = 0;
-
-  const sourceLines = sourceBranch.currentContent.split('\n');
-  const targetLines = targetBranch.currentContent.split('\n');
-  const minLines = Math.min(sourceLines.length, targetLines.length);
-
-  for (let i = 0; i < minLines; i++) {
-    if (sourceLines[i] !== targetLines[i]) {
-      hasConflicts = true;
-      const conflict: ConflictBlock = {
-        id: `conflict-${conflictIndex++}`,
-        startIndex: i,
-        endIndex: i,
-        baseContent: targetLines[i],
-        branchContent: sourceLines[i],
-        resolution: 'pending',
-      };
-      conflicts.push(conflict);
-
-      if (resolutions && resolutions[conflict.id]) {
-        const resolution = resolutions[conflict.id];
-        if (resolution === 'keep-base') {
-          mergedContent += targetLines[i] + '\n';
-          conflict.resolvedContent = targetLines[i];
-          conflict.resolution = 'keep-base';
-        } else if (resolution === 'keep-branch') {
-          mergedContent += sourceLines[i] + '\n';
-          conflict.resolvedContent = sourceLines[i];
-          conflict.resolution = 'keep-branch';
-        } else if (typeof resolution === 'string') {
-          mergedContent += resolution + '\n';
-          conflict.resolvedContent = resolution;
-          conflict.resolution = 'custom';
-        }
-      } else {
-        mergedContent += `<<<<<<< 主线\n${targetLines[i]}\n=======\n${sourceLines[i]}\n>>>>>>> 实验分支\n`;
-      }
-    } else {
-      mergedContent += sourceLines[i] + '\n';
-    }
-  }
-
-  if (sourceLines.length > minLines) {
-    for (let i = minLines; i < sourceLines.length; i++) {
-      mergedContent += sourceLines[i] + '\n';
-    }
-  } else if (targetLines.length > minLines) {
-    for (let i = minLines; i < targetLines.length; i++) {
-      mergedContent += targetLines[i] + '\n';
-    }
-  }
-
-  if (!hasConflicts || (resolutions && Object.keys(resolutions).length > 0)) {
-    const targetIndex = mockChapterBranches.findIndex(b => b.id === targetBranchId);
-    if (targetIndex !== -1) {
-      mockChapterBranches[targetIndex] = {
-        ...mockChapterBranches[targetIndex],
-        currentContent: mergedContent.trim(),
-        wordCount: mergedContent.trim().replace(/\s/g, '').length,
-        updatedAt: new Date(),
-      };
-    }
-    const sourceIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
-    if (sourceIndex !== -1) {
-      mockChapterBranches[sourceIndex] = {
-        ...mockChapterBranches[sourceIndex],
-        status: 'merged',
-        mergedAt: new Date(),
-        updatedAt: new Date(),
-      };
-    }
-    res.json({
-      success: true,
-      hasConflicts: false,
-      mergedContent: mergedContent.trim(),
-    });
-  } else {
-    res.json({
-      success: false,
-      hasConflicts: true,
-      conflicts,
-      message: '存在内容冲突，请手动解决',
-    });
-  }
-});
-
-router.get('/branches/diff', (req: Request, res: Response) => {
-  const { branchAId, branchBId } = req.query;
-  if (typeof branchAId !== 'string' || typeof branchBId !== 'string') {
-    return res.status(400).json({ error: 'Invalid parameters' });
-  }
-
-  const branchA = mockChapterBranches.find(b => b.id === branchAId);
-  const branchB = mockChapterBranches.find(b => b.id === branchBId);
-  if (!branchA || !branchB) return res.status(404).json({ error: 'Branch not found' });
-
-  const diffs = dmp.diff_main(branchA.currentContent, branchB.currentContent);
-  dmp.diff_cleanupSemantic(diffs);
-
-  const wordCountDelta = branchB.wordCount - branchA.wordCount;
-
-  res.json({
-    branchA,
-    branchB,
-    diffs,
-    wordCountDelta,
-  });
 });
 
 // ==================== Characters CRUD ====================
@@ -816,183 +518,6 @@ router.put('/conflicts/:id/resolve', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-// ==================== Dashboard ====================
-
-router.get('/projects/:id/dashboard', (req: Request, res: Response) => {
-  const projectId = req.params.id;
-  const project = mockProjects.find(p => p.id === projectId);
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const chapters = mockChapters.filter(c => c.projectId === projectId);
-  const chapterIds = new Set(chapters.map(c => c.id));
-  const versions = mockChapterVersions.filter(v => chapterIds.has(v.chapterId));
-  const characters = mockCharacters.filter(c => c.projectId === projectId);
-  const plotPoints = mockPlotPoints.filter(p => p.projectId === projectId);
-
-  const totalWords = chapters.reduce((sum, c) => sum + c.wordCount, 0);
-
-  const now = new Date();
-  const monthlyWords: DashboardData['monthlyWords'] = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = `${d.getMonth() + 1}月`;
-    let words = 0;
-
-    const versionsInMonth = versions.filter(v => {
-      const vDate = new Date(v.createdAt);
-      return vDate.getFullYear() === d.getFullYear() && vDate.getMonth() === d.getMonth();
-    });
-
-    const chapterSnapshots = new Map<string, { content: string; prevContent: string }>();
-    for (const v of versionsInMonth) {
-      const prevVersions = versions.filter(
-        vv => vv.chapterId === v.chapterId && new Date(vv.createdAt) < new Date(v.createdAt)
-      ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      const prevContent = prevVersions.length > 0 ? prevVersions[0].content : '';
-      const existing = chapterSnapshots.get(v.chapterId);
-      if (!existing) {
-        chapterSnapshots.set(v.chapterId, { content: v.content, prevContent });
-      } else {
-        existing.prevContent = existing.content;
-        existing.content = v.content;
-      }
-    }
-
-    for (const [, snap] of chapterSnapshots) {
-      const addedChars = Math.max(0, snap.content.replace(/\s/g, '').length - snap.prevContent.replace(/\s/g, '').length);
-      words += addedChars;
-    }
-
-    monthlyWords.push({ month: label, words });
-  }
-
-  const authorWordMap = new Map<string, number>();
-  for (const chapter of chapters) {
-    const chapterVersions = versions
-      .filter(v => v.chapterId === chapter.id)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    if (chapterVersions.length === 0) {
-      authorWordMap.set(project.creatorId, (authorWordMap.get(project.creatorId) || 0) + chapter.wordCount);
-      continue;
-    }
-
-    for (let i = 0; i < chapterVersions.length; i++) {
-      const v = chapterVersions[i];
-      const prevContent = i === 0 ? '' : chapterVersions[i - 1].content;
-      const addedWords = Math.max(0, v.content.replace(/\s/g, '').length - prevContent.replace(/\s/g, '').length);
-      authorWordMap.set(v.authorId, (authorWordMap.get(v.authorId) || 0) + addedWords);
-    }
-  }
-
-  const totalAuthorWords = Array.from(authorWordMap.values()).reduce((s, w) => s + w, 0);
-  const authorContributions: DashboardData['authorContributions'] = Array.from(authorWordMap.entries())
-    .map(([userId, words]) => {
-      const user = mockUsers.find(u => u.id === userId);
-      return {
-        userId,
-        username: user?.username || '未知作者',
-        avatarUrl: user?.avatarUrl || '',
-        words,
-        percentage: totalAuthorWords > 0 ? Math.round((words / totalAuthorWords) * 1000) / 10 : 0,
-      };
-    })
-    .sort((a, b) => b.words - a.words);
-
-  const heatmapMap = new Map<string, number>();
-  for (const v of versions) {
-    const vDate = new Date(v.createdAt);
-    const day = vDate.getDay();
-    const hour = vDate.getHours();
-    const key = `${day}-${hour}`;
-    heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
-  }
-  for (const c of chapters) {
-    const cDate = new Date(c.updatedAt);
-    const day = cDate.getDay();
-    const hour = cDate.getHours();
-    const key = `${day}-${hour}`;
-    heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
-  }
-  const heatmap: DashboardData['heatmap'] = [];
-  for (let d = 0; d < 7; d++) {
-    for (let h = 0; h < 24; h++) {
-      heatmap.push({ day: d, hour: h, count: heatmapMap.get(`${d}-${h}`) || 0 });
-    }
-  }
-
-  const TARGET_WORDS_PER_CHAPTER = 800;
-  const chapterRadars: DashboardData['chapterRadars'] = chapters.map(chapter => {
-    const text = chapter.content;
-    const cleanText = text.replace(/\s/g, '');
-    const completion = Math.min(100, Math.round((chapter.wordCount / TARGET_WORDS_PER_CHAPTER) * 100));
-
-    const relatedPlots = plotPoints.filter(p => p.relatedChapterIds.includes(chapter.id));
-    const resolvedPlots = relatedPlots.filter(p => p.status === 'resolved');
-    const plotProgress = relatedPlots.length > 0
-      ? Math.round((resolvedPlots.length / relatedPlots.length) * 100)
-      : completion > 50 ? 60 : 30;
-
-    const charAppearances = characters.filter(c =>
-      c.appearances.some(a => a.chapterId === chapter.id)
-    );
-    const nameMentions = characters.filter(c => text.includes(c.name));
-    const charDepthScore = charAppearances.length * 15 + nameMentions.length * 10;
-    const characterDepth = Math.min(100, charDepthScore);
-
-    const descriptionPatterns = /[，。]([^""''「」]{10,})[，。]/g;
-    const descMatches = text.match(descriptionPatterns);
-    const descChars = descMatches ? descMatches.join('').replace(/\s/g, '').length : 0;
-    const description = cleanText.length > 0
-      ? Math.min(100, Math.round((descChars / cleanText.length) * 200))
-      : 0;
-
-    const dialogueMatches = text.match(/[""''「」][^""''「」]+[""''「」]/g);
-    const dialogueChars = dialogueMatches ? dialogueMatches.join('').replace(/\s/g, '').length : 0;
-    const dialogue = cleanText.length > 0
-      ? Math.min(100, Math.round((dialogueChars / cleanText.length) * 250))
-      : 0;
-
-    return {
-      chapterId: chapter.id,
-      chapterTitle: chapter.title.replace(/^第.+?章\s*/, ''),
-      completion,
-      plotProgress,
-      characterDepth,
-      description,
-      dialogue,
-    };
-  });
-
-  const uniqueDays = new Set<string>();
-  for (const v of versions) {
-    const d = new Date(v.createdAt);
-    uniqueDays.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
-  }
-  for (const c of chapters) {
-    const d = new Date(c.updatedAt);
-    uniqueDays.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
-  }
-  const writingDays = uniqueDays.size || 1;
-
-  const projectAge = Math.max(1, Math.ceil((now.getTime() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
-  const avgWordsPerDay = Math.round(totalWords / projectAge);
-
-  const dashboard: DashboardData = {
-    totalWords,
-    authorCount: authorWordMap.size,
-    avgWordsPerDay,
-    writingDays,
-    monthlyWords,
-    authorContributions,
-    heatmap,
-    chapterRadars,
-  };
-
-  res.json(dashboard);
-});
-
 // ==================== PDF Export ====================
 
 router.post('/export/pdf', async (req: Request, res: Response) => {
@@ -1188,6 +713,307 @@ router.put('/projects/:id/notes/reorder', (req: Request, res: Response) => {
   });
 
   res.json({ success: true });
+});
+
+// ==================== Branches ====================
+
+const ensureMainBranch = (chapterId: string) => {
+  const existingMain = mockChapterBranches.find(b => b.chapterId === chapterId && b.isMain);
+  if (existingMain) return existingMain;
+
+  const chapter = mockChapters.find(c => c.id === chapterId);
+  if (!chapter) return null;
+
+  const mainBranch: ChapterBranch = {
+    id: `branch-${chapterId}-main`,
+    chapterId,
+    name: '主线',
+    description: `${chapter.title} 主线剧情`,
+    isMain: true,
+    status: 'active',
+    creatorId: mockUsers[0].id,
+    creator: mockUsers[0],
+    currentContent: chapter.content,
+    wordCount: chapter.wordCount,
+    createdAt: chapter.createdAt,
+    updatedAt: chapter.updatedAt,
+    color: '#d4af37',
+  };
+
+  mockChapterBranches.unshift(mainBranch);
+  return mainBranch;
+};
+
+router.get('/chapters/:id/branches', (req: Request, res: Response) => {
+  const chapterId = req.params.id;
+  ensureMainBranch(chapterId);
+  const branches = mockChapterBranches.filter(b => b.chapterId === chapterId);
+  res.json(branches);
+});
+
+router.get('/branches/:id', (req: Request, res: Response) => {
+  const branch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+  res.json(branch);
+});
+
+router.post('/chapters/:id/branches', (req: Request, res: Response) => {
+  const chapterId = req.params.id;
+  const { name, description, parentBranchId, color, baseVersionId } = req.body;
+
+  const mainBranch = ensureMainBranch(chapterId);
+  if (!mainBranch) return res.status(404).json({ error: 'Chapter not found' });
+
+  const parentBranch = parentBranchId
+    ? mockChapterBranches.find(b => b.id === parentBranchId)
+    : mainBranch;
+
+  if (!parentBranch) return res.status(400).json({ error: 'Parent branch not found' });
+
+  const creator = mockUsers[0];
+  const newBranch: ChapterBranch = {
+    id: `branch-${Date.now()}`,
+    chapterId,
+    name: name || '新分支',
+    description: description || '',
+    parentBranchId: parentBranch.id,
+    baseVersionId: baseVersionId,
+    isMain: false,
+    status: 'active',
+    creatorId: creator.id,
+    creator,
+    currentContent: parentBranch.currentContent,
+    wordCount: parentBranch.wordCount,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    color: color || '#7c3aed',
+  };
+
+  mockChapterBranches.push(newBranch);
+
+  const initialVersion: BranchVersion = {
+    id: `bv-${Date.now()}`,
+    branchId: newBranch.id,
+    content: parentBranch.currentContent,
+    authorId: creator.id,
+    author: creator,
+    changeSummary: '创建分支',
+    createdAt: new Date(),
+    wordCount: parentBranch.wordCount,
+  };
+  mockBranchVersions.push(initialVersion);
+
+  res.status(201).json(newBranch);
+});
+
+router.put('/branches/:id', (req: Request, res: Response) => {
+  const branch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+  const { name, description, status } = req.body;
+  if (name !== undefined) branch.name = name;
+  if (description !== undefined) branch.description = description;
+  if (status !== undefined) branch.status = status as BranchStatus;
+  branch.updatedAt = new Date();
+
+  res.json(branch);
+});
+
+router.delete('/branches/:id', (req: Request, res: Response) => {
+  const index = mockChapterBranches.findIndex(b => b.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Branch not found' });
+
+  const branch = mockChapterBranches[index];
+  if (branch.isMain) return res.status(400).json({ error: 'Cannot delete main branch' });
+
+  for (let i = mockBranchVersions.length - 1; i >= 0; i--) {
+    if (mockBranchVersions[i].branchId === branch.id) {
+      mockBranchVersions.splice(i, 1);
+    }
+  }
+
+  mockChapterBranches.splice(index, 1);
+  res.json({ success: true });
+});
+
+router.get('/branches/:id/versions', (req: Request, res: Response) => {
+  const branchId = req.params.id;
+  const versions = mockBranchVersions
+    .filter(v => v.branchId === branchId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  res.json(versions);
+});
+
+router.post('/branches/:id/versions', (req: Request, res: Response) => {
+  const branch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+  const { content, summary } = req.body;
+  const creator = mockUsers[0];
+  const wordCount = (content || branch.currentContent).replace(/\s/g, '').length;
+
+  const newVersion: BranchVersion = {
+    id: `bv-${Date.now()}`,
+    branchId: branch.id,
+    content: content || branch.currentContent,
+    authorId: creator.id,
+    author: creator,
+    changeSummary: summary || '更新内容',
+    createdAt: new Date(),
+    wordCount,
+  };
+
+  mockBranchVersions.push(newVersion);
+  branch.currentContent = content || branch.currentContent;
+  branch.wordCount = wordCount;
+  branch.updatedAt = new Date();
+
+  if (branch.isMain) {
+    const chapter = mockChapters.find(c => c.id === branch.chapterId);
+    if (chapter) {
+      chapter.content = content || branch.currentContent;
+      chapter.wordCount = wordCount;
+      chapter.updatedAt = new Date();
+    }
+  }
+
+  res.status(201).json(newVersion);
+});
+
+router.post('/branches/:id/merge', (req: Request, res: Response) => {
+  const sourceBranch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!sourceBranch) return res.status(404).json({ error: 'Source branch not found' });
+
+  const { targetBranchId, resolutions } = req.body;
+  const targetBranch = mockChapterBranches.find(b => b.id === targetBranchId);
+  if (!targetBranch) return res.status(404).json({ error: 'Target branch not found' });
+
+  const diffResult = dmp.diff_main(targetBranch.currentContent, sourceBranch.currentContent);
+  dmp.diff_cleanupSemantic(diffResult);
+
+  const conflicts: ConflictBlock[] = [];
+  let mergedContent = '';
+  let hasConflicts = false;
+  let conflictIndex = 0;
+
+  const sourceLines = sourceBranch.currentContent.split('\n');
+  const targetLines = targetBranch.currentContent.split('\n');
+  const minLines = Math.min(sourceLines.length, targetLines.length);
+
+  for (let i = 0; i < minLines; i++) {
+    if (sourceLines[i] !== targetLines[i]) {
+      hasConflicts = true;
+      const conflict: ConflictBlock = {
+        id: `conflict-${conflictIndex++}`,
+        startIndex: i,
+        endIndex: i,
+        baseContent: targetLines[i],
+        branchContent: sourceLines[i],
+        resolution: 'pending',
+      };
+      conflicts.push(conflict);
+
+      if (resolutions && resolutions[conflict.id]) {
+        const resolution = resolutions[conflict.id];
+        if (resolution === 'keep-base') {
+          mergedContent += targetLines[i] + '\n';
+        } else if (resolution === 'keep-branch') {
+          mergedContent += sourceLines[i] + '\n';
+        } else if (resolution === 'custom' && resolutions[`${conflict.id}-custom`]) {
+          mergedContent += resolutions[`${conflict.id}-custom`] + '\n';
+        } else {
+          mergedContent += targetLines[i] + '\n';
+        }
+      } else {
+        mergedContent += targetLines[i] + '\n';
+      }
+    } else {
+      mergedContent += targetLines[i] + '\n';
+    }
+  }
+
+  if (sourceLines.length > minLines) {
+    for (let i = minLines; i < sourceLines.length; i++) {
+      hasConflicts = true;
+      const conflict: ConflictBlock = {
+        id: `conflict-${conflictIndex++}`,
+        startIndex: i,
+        endIndex: i,
+        baseContent: '',
+        branchContent: sourceLines[i],
+        resolution: 'pending',
+      };
+      conflicts.push(conflict);
+      if (resolutions && resolutions[conflict.id] === 'keep-branch') {
+        mergedContent += sourceLines[i] + '\n';
+      }
+    }
+  }
+
+  if (targetLines.length > minLines) {
+    for (let i = minLines; i < targetLines.length; i++) {
+      mergedContent += targetLines[i] + '\n';
+    }
+  }
+
+  mergedContent = mergedContent.trimEnd();
+
+  if (!hasConflicts || (resolutions && Object.keys(resolutions).length > 0)) {
+    targetBranch.currentContent = mergedContent;
+    targetBranch.wordCount = mergedContent.replace(/\s/g, '').length;
+    targetBranch.updatedAt = new Date();
+
+    if (sourceBranch.status === 'active') {
+      sourceBranch.status = 'merged';
+      sourceBranch.mergedAt = new Date();
+    }
+
+    if (targetBranch.isMain) {
+      const chapter = mockChapters.find(c => c.id === targetBranch.chapterId);
+      if (chapter) {
+        chapter.content = mergedContent;
+        chapter.wordCount = mergedContent.replace(/\s/g, '').length;
+        chapter.updatedAt = new Date();
+      }
+    }
+
+    res.json({
+      success: true,
+      hasConflicts,
+      conflicts,
+      mergedContent,
+      message: hasConflicts ? '已解决冲突并完成合并' : '合并成功，无冲突',
+    });
+  } else {
+    res.json({
+      success: false,
+      hasConflicts: true,
+      conflicts,
+      message: '检测到冲突，请解决后再合并',
+    });
+  }
+});
+
+router.get('/branches/diff', (req: Request, res: Response) => {
+  const { branchAId, branchBId } = req.query;
+  const branchA = mockChapterBranches.find(b => b.id === branchAId);
+  const branchB = mockChapterBranches.find(b => b.id === branchBId);
+
+  if (!branchA || !branchB) {
+    return res.status(404).json({ error: 'Branch not found' });
+  }
+
+  const diffs = dmp.diff_main(branchA.currentContent, branchB.currentContent);
+  dmp.diff_cleanupSemantic(diffs);
+
+  const wordCountDelta = branchB.wordCount - branchA.wordCount;
+
+  res.json({
+    branchA,
+    branchB,
+    diffs,
+    wordCountDelta,
+  });
 });
 
 export default router;

@@ -21,11 +21,13 @@ import {
   ChevronDown,
   Layers,
   PenLine,
+  GitBranch,
+  ChevronRight,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/lib/utils';
 import { speak, stopSpeak, isSpeaking } from '@/lib/tts';
-import type { ConflictWarning, Character } from '@shared/types';
+import type { ConflictWarning, Character, ChapterBranch } from '@shared/types';
 import ChapterOutline from '@/components/ChapterOutline';
 
 export default function ChapterEditor() {
@@ -49,6 +51,13 @@ export default function ChapterEditor() {
     characters,
     currentUser,
     isLoading,
+    getChapterBranches,
+    getMainBranch,
+    getCurrentBranch,
+    setCurrentBranch,
+    loadChapterBranches,
+    createBranchVersion,
+    currentBranchId,
   } = useAppStore();
 
   const [content, setContent] = useState('');
@@ -72,17 +81,40 @@ export default function ChapterEditor() {
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
   const [speakingCharacterName, setSpeakingCharacterName] = useState<string>('');
   const [editorMode, setEditorMode] = useState<'writing' | 'outline'>('writing');
+  const [showBranchSelector, setShowBranchSelector] = useState(false);
+  const branchSelectorRef = useRef<HTMLDivElement>(null);
 
   const projectCharacters = characters.filter(c => c.projectId === projectId);
   const projectChapters = chapters.filter(c => c.projectId === projectId);
+  const branches = chapterId ? getChapterBranches(chapterId) : [];
+  const mainBranch = chapterId ? getMainBranch(chapterId) : null;
+  const currentBranch = getCurrentBranch();
 
   useEffect(() => {
     if (chapterId) {
       setCurrentChapter(chapterId);
+      loadChapterBranches(chapterId);
     } else {
       setCurrentChapter(null);
     }
-  }, [chapterId, setCurrentChapter]);
+  }, [chapterId, setCurrentChapter, loadChapterBranches]);
+
+  useEffect(() => {
+    if (chapterId && !currentBranchId && mainBranch?.id) {
+      setCurrentBranch(mainBranch.id);
+      setContent(mainBranch.currentContent);
+    }
+  }, [chapterId, currentBranchId, mainBranch?.id, mainBranch?.currentContent, setCurrentBranch]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (branchSelectorRef.current && !branchSelectorRef.current.contains(e.target as Node)) {
+        setShowBranchSelector(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (currentChapter) {
@@ -224,10 +256,17 @@ export default function ChapterEditor() {
   };
 
   const handleSaveVersion = async () => {
-    if (!currentChapter || !versionSummary.trim()) return;
-    await createVersion(currentChapter.id, versionSummary);
+    if (!currentBranchId || !versionSummary.trim()) return;
+    await createBranchVersion(currentBranchId, content, versionSummary);
     setVersionSummary('');
     setShowVersionModal(false);
+    setLastSaved(new Date());
+  };
+
+  const handleSwitchBranch = (branch: ChapterBranch) => {
+    setCurrentBranch(branch.id);
+    setContent(branch.currentContent);
+    setShowBranchSelector(false);
   };
 
   const handleCreateChapter = async () => {
@@ -395,6 +434,106 @@ export default function ChapterEditor() {
                   )}
                 </div>
               </div>
+
+              {currentBranch && (
+                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-paper-200">
+                  <div className="relative" ref={branchSelectorRef}>
+                    <button
+                      onClick={() => setShowBranchSelector(!showBranchSelector)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-paper-100 hover:bg-paper-200 rounded-lg transition-colors"
+                    >
+                      <GitBranch className="w-4 h-4 text-ink-500" />
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: currentBranch.color }}
+                      />
+                      <span className="text-sm font-medium text-ink-700">
+                        {currentBranch.name}
+                      </span>
+                      {currentBranch.isMain && (
+                        <span className="text-xs px-1.5 py-0.5 bg-gold-100 text-gold-700 rounded">
+                          主线
+                        </span>
+                      )}
+                      <ChevronDown className="w-4 h-4 text-ink-400" />
+                    </button>
+
+                    {showBranchSelector && (
+                      <div className="absolute top-full left-0 mt-2 w-72 card shadow-ink-lg z-50 animate-slide-in-right overflow-hidden">
+                        <div className="p-2 border-b border-paper-200">
+                          <div className="text-xs text-ink-400 uppercase tracking-wider px-2 py-1">
+                            选择分支
+                          </div>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto scrollbar-thin p-2 space-y-1">
+                          {branches.map((branch) => {
+                            const isActive = branch.id === currentBranchId;
+                            return (
+                              <button
+                                key={branch.id}
+                                onClick={() => handleSwitchBranch(branch)}
+                                className={cn(
+                                  'w-full flex items-center gap-3 p-3 rounded-lg transition-colors text-left',
+                                  isActive
+                                    ? 'bg-gold-50 border border-gold-200'
+                                    : 'hover:bg-paper-100'
+                                )}
+                              >
+                                <div
+                                  className="w-3 h-3 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: branch.color }}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-ink-800 truncate">
+                                      {branch.name}
+                                    </span>
+                                    {branch.isMain && (
+                                      <span className="text-xs px-1.5 py-0.5 bg-gold-100 text-gold-700 rounded flex-shrink-0">
+                                        主线
+                                      </span>
+                                    )}
+                                    {branch.status === 'merged' && (
+                                      <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
+                                        已合并
+                                      </span>
+                                    )}
+                                  </div>
+                                  {branch.description && (
+                                    <p className="text-xs text-ink-500 truncate mt-0.5">
+                                      {branch.description}
+                                    </p>
+                                  )}
+                                  <div className="text-xs text-ink-400 mt-1">
+                                    {branch.wordCount.toLocaleString()} 字 · {branch.creator?.username}
+                                  </div>
+                                </div>
+                                {isActive && (
+                                  <ChevronRight className="w-4 h-4 text-gold-500 flex-shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="p-2 border-t border-paper-200">
+                          <Link
+                            to={`/projects/${projectId}/chapters/${currentChapter.id}/history`}
+                            onClick={() => setShowBranchSelector(false)}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-ink-600 hover:text-ink-800 hover:bg-paper-100 rounded-lg transition-colors"
+                          >
+                            <GitBranch className="w-4 h-4" />
+                            管理分支
+                          </Link>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-sm text-ink-400">
+                    {currentBranch.description || '当前分支'}
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-2 mt-4 pt-4 border-t border-paper-200">
                 <button

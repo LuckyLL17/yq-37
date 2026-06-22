@@ -9,16 +9,10 @@ import type {
   ConflictWarning,
   PdfExportConfig,
   StickyNote,
-  BeatCard,
-  ChapterOutline,
-  NarrativeStructureType,
-  StructureTemplate,
-  EmotionPoint,
   ChapterBranch,
   BranchVersion,
   MergeResult,
 } from '@shared/types';
-import { structureTemplates, mockBeats, mockChapterOutlines } from './mockData';
 import { Diff, diff_match_patch } from 'diff-match-patch';
 import { api } from '@/services/api';
 
@@ -51,17 +45,34 @@ interface AppState {
   chapters: Chapter[];
   currentChapter: Chapter | null;
   chapterVersions: ChapterVersion[];
-  chapterBranches: ChapterBranch[];
-  branchVersions: BranchVersion[];
   characters: Character[];
   plotPoints: PlotPoint[];
   conflictWarnings: ConflictWarning[];
   stickyNotes: StickyNote[];
-  beats: BeatCard[];
-  chapterOutlines: ChapterOutline[];
-  structureTemplates: StructureTemplate[];
   isLoading: boolean;
   initialized: boolean;
+  chapterBranches: ChapterBranch[];
+  branchVersions: BranchVersion[];
+  currentBranchId: string | null;
+
+  loadChapterBranches: (chapterId: string) => Promise<void>;
+  getChapterBranches: (chapterId: string) => ChapterBranch[];
+  getMainBranch: (chapterId: string) => ChapterBranch | null;
+  getCurrentBranch: () => ChapterBranch | null;
+  setCurrentBranch: (branchId: string) => void;
+  createBranch: (chapterId: string, data: {
+    name: string;
+    description?: string;
+    parentBranchId?: string;
+    color?: string;
+  }) => Promise<ChapterBranch>;
+  updateBranch: (branchId: string, updates: Partial<ChapterBranch>) => Promise<void>;
+  deleteBranch: (branchId: string) => Promise<void>;
+  loadBranchVersions: (branchId: string) => Promise<void>;
+  getBranchVersions: (branchId: string) => BranchVersion[];
+  createBranchVersion: (branchId: string, content: string, summary: string) => Promise<void>;
+  mergeBranch: (sourceBranchId: string, targetBranchId: string, resolutions?: Record<string, string>) => Promise<MergeResult>;
+  getBranchDiff: (branchAId: string, branchBId: string) => Promise<any>;
 
   initApp: () => Promise<void>;
   setCurrentProject: (projectId: string) => Promise<void>;
@@ -97,34 +108,6 @@ interface AppState {
   updateNotePosition: (noteId: string, data: { positionX: number; positionY: number; zIndex?: number; rotation?: number }) => Promise<void>;
   deleteStickyNote: (noteId: string) => Promise<void>;
   reorderNotes: (projectId: string, noteIds: string[]) => Promise<void>;
-
-  getChapterOutline: (chapterId: string) => ChapterOutline | null;
-  getBeatsForChapter: (chapterId: string) => BeatCard[];
-  createBeat: (chapterId: string, data: Partial<BeatCard>) => Promise<BeatCard>;
-  updateBeat: (beatId: string, data: Partial<BeatCard>) => Promise<void>;
-  deleteBeat: (beatId: string) => Promise<void>;
-  reorderBeats: (chapterId: string, beatIds: string[]) => Promise<void>;
-  applyStructureTemplate: (chapterId: string, structureType: NarrativeStructureType) => Promise<void>;
-  updateOutlineSummary: (chapterId: string, summary: string) => Promise<void>;
-  updateBeatEmotionCurve: (beatId: string, emotionCurve: EmotionPoint[]) => Promise<void>;
-
-  loadChapterBranches: (chapterId: string) => Promise<void>;
-  getChapterBranches: (chapterId: string) => ChapterBranch[];
-  getMainBranch: (chapterId: string) => ChapterBranch | null;
-  createBranch: (chapterId: string, data: {
-    name: string;
-    description?: string;
-    parentBranchId?: string;
-    baseVersionId?: string;
-    color?: string;
-  }) => Promise<ChapterBranch>;
-  updateBranch: (branchId: string, updates: Partial<ChapterBranch>) => Promise<void>;
-  deleteBranch: (branchId: string) => Promise<void>;
-  loadBranchVersions: (branchId: string) => Promise<void>;
-  getBranchVersions: (branchId: string) => BranchVersion[];
-  createBranchVersion: (branchId: string, content: string, summary: string) => Promise<void>;
-  mergeBranch: (sourceBranchId: string, targetBranchId: string, resolutions?: Record<string, string>) => Promise<MergeResult>;
-  getBranchDiff: (branchAId: string, branchBId: string) => Promise<any>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -141,17 +124,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   chapters: [],
   currentChapter: null,
   chapterVersions: [],
-  chapterBranches: [],
-  branchVersions: [],
   characters: [],
   plotPoints: [],
   conflictWarnings: [],
   stickyNotes: [],
-  beats: [],
-  chapterOutlines: [],
-  structureTemplates: [],
   isLoading: false,
   initialized: false,
+  chapterBranches: [],
+  branchVersions: [],
+  currentBranchId: null,
 
   initApp: async () => {
     if (get().initialized) return;
@@ -172,29 +153,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         allChapterIds.slice(0, 10).map(id => api.versions.list(id).catch(() => []))
       ).then(arrs => arrs.flat());
 
-      const branches = await Promise.all(
-        allChapterIds.slice(0, 10).map(id => api.branches.list(id).catch(() => []))
-      ).then(arrs => arrs.flat());
-
-      const allBranchIds = branches.map((b: any) => b.id);
-      const branchVers = await Promise.all(
-        allBranchIds.slice(0, 20).map(id => api.branches.listVersions(id).catch(() => []))
-      ).then(arrs => arrs.flat());
-
       set({
         users: reviveDates(users),
         projects: reviveDates(projects),
         chapters: reviveDates(chapters),
         chapterVersions: reviveDates(versions),
-        chapterBranches: reviveDates(branches),
-        branchVersions: reviveDates(branchVers),
         characters: reviveDates(characters),
         plotPoints: reviveDates(plotPoints),
         stickyNotes: reviveDates(stickyNotes),
         conflictWarnings: [],
-        beats: reviveDates(mockBeats),
-        chapterOutlines: reviveDates(mockChapterOutlines),
-        structureTemplates: reviveDates(structureTemplates),
         currentUser: reviveDates(users[0]) || get().currentUser,
         initialized: true,
         isLoading: false,
@@ -220,12 +187,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCurrentChapter: async (chapterId: string | null) => {
     if (!chapterId) {
-      set({ currentChapter: null });
+      set({ currentChapter: null, currentBranchId: null });
       return;
     }
     try {
       const chapter = reviveDates(await api.chapters.get(chapterId));
-      set({ currentChapter: chapter });
+      set({ currentChapter: chapter, currentBranchId: null });
       const versions = reviveDates(await api.versions.list(chapterId));
       set(state => ({
         chapterVersions: [
@@ -234,7 +201,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ],
       }));
     } catch {
-      set({ currentChapter: null });
+      set({ currentChapter: null, currentBranchId: null });
     }
   },
 
@@ -707,280 +674,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  getChapterOutline: (chapterId: string): ChapterOutline | null => {
-    return get().chapterOutlines.find(o => o.chapterId === chapterId) || null;
-  },
-
-  getBeatsForChapter: (chapterId: string): BeatCard[] => {
-    return get().beats
-      .filter(b => b.chapterId === chapterId)
-      .sort((a, b) => a.order - b.order);
-  },
-
-  createBeat: async (chapterId: string, data: Partial<BeatCard>): Promise<BeatCard> => {
-    const state = get();
-    const chapter = state.chapters.find(c => c.id === chapterId);
-    const existingBeats = state.getBeatsForChapter(chapterId);
-    const newBeat: BeatCard = {
-      id: `beat-${Date.now()}`,
-      chapterId,
-      structureType: data.structureType || 'custom',
-      act: data.act,
-      beatKey: data.beatKey,
-      title: data.title || '新节拍',
-      description: data.description || '',
-      goal: data.goal || '',
-      conflict: data.conflict || '',
-      turningPoint: data.turningPoint || '',
-      emotionCurve: data.emotionCurve || [{ position: 0, intensity: 0.5 }, { position: 1, intensity: 0.5 }],
-      order: existingBeats.length + 1,
-      color: data.color || '#627d98',
-      relatedCharacterIds: data.relatedCharacterIds || [],
-      relatedPlotPointIds: data.relatedPlotPointIds || [],
-      estimatedWords: data.estimatedWords || 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    set(state => ({ beats: [...state.beats, newBeat] }));
-
-    const existingOutline = state.getChapterOutline(chapterId);
-    if (!existingOutline && chapter) {
-      const newOutline: ChapterOutline = {
-        id: `outline-${Date.now()}`,
-        chapterId,
-        projectId: chapter.projectId,
-        structureType: data.structureType || 'custom',
-        beats: [newBeat],
-        summary: '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
-    } else if (existingOutline) {
-      set(state => ({
-        chapterOutlines: state.chapterOutlines.map(o =>
-          o.id === existingOutline.id
-            ? { ...o, beats: [...o.beats, newBeat], updatedAt: new Date() }
-            : o
-        ),
-      }));
-    }
-
-    return newBeat;
-  },
-
-  updateBeat: async (beatId: string, data: Partial<BeatCard>) => {
-    set(state => ({
-      beats: state.beats.map(b =>
-        b.id === beatId ? { ...b, ...data, updatedAt: new Date() } : b
-      ),
-      chapterOutlines: state.chapterOutlines.map(o => ({
-        ...o,
-        beats: o.beats.map(b => b.id === beatId ? { ...b, ...data, updatedAt: new Date() } : b),
-        updatedAt: new Date(),
-      })),
-    }));
-  },
-
-  deleteBeat: async (beatId: string) => {
-    const beat = get().beats.find(b => b.id === beatId);
-    if (!beat) return;
-    set(state => ({
-      beats: state.beats.filter(b => b.id !== beatId),
-      chapterOutlines: state.chapterOutlines.map(o => ({
-        ...o,
-        beats: o.beats.filter(b => b.id !== beatId),
-        updatedAt: new Date(),
-      })),
-    }));
-    const chapterBeats = get().getBeatsForChapter(beat.chapterId);
-    chapterBeats.forEach((b, idx) => {
-      if (b.order !== idx + 1) {
-        set(state => ({
-          beats: state.beats.map(x => x.id === b.id ? { ...x, order: idx + 1 } : x),
-        }));
-      }
-    });
-  },
-
-  reorderBeats: async (chapterId: string, beatIds: string[]) => {
-    set(state => ({
-      beats: state.beats.map(b => {
-        const idx = beatIds.indexOf(b.id);
-        if (idx !== -1 && b.chapterId === chapterId) {
-          return { ...b, order: idx + 1, updatedAt: new Date() };
-        }
-        return b;
-      }),
-      chapterOutlines: state.chapterOutlines.map(o =>
-        o.chapterId === chapterId
-          ? {
-              ...o,
-              beats: o.beats
-                .map(b => {
-                  const idx = beatIds.indexOf(b.id);
-                  if (idx !== -1) {
-                    return { ...b, order: idx + 1, updatedAt: new Date() };
-                  }
-                  return b;
-                })
-                .sort((a, b) => a.order - b.order),
-              updatedAt: new Date(),
-            }
-          : o
-      ),
-    }));
-  },
-
-  applyStructureTemplate: async (chapterId: string, structureType: NarrativeStructureType) => {
-    const state = get();
-    const template = state.structureTemplates.find(t => t.type === structureType);
-    if (!template) return;
-
-    const chapter = state.chapters.find(c => c.id === chapterId);
-    if (!chapter) return;
-
-    const existingBeats = state.getBeatsForChapter(chapterId);
-    for (const beat of existingBeats) {
-      await state.deleteBeat(beat.id);
-    }
-
-    let order = 1;
-    const newBeats: BeatCard[] = [];
-    for (const act of template.acts) {
-      for (const beat of act.beats) {
-        const newBeat: BeatCard = {
-          id: `beat-${Date.now()}-${order}`,
-          chapterId,
-          structureType,
-          act: act.key,
-          beatKey: beat.key,
-          title: beat.name,
-          description: beat.description,
-          goal: beat.suggestedGoal,
-          conflict: beat.suggestedConflict,
-          turningPoint: beat.suggestedTurningPoint,
-          emotionCurve: beat.defaultEmotion,
-          order,
-          color: beat.color,
-          relatedCharacterIds: [],
-          relatedPlotPointIds: [],
-          estimatedWords: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        newBeats.push(newBeat);
-        order++;
-      }
-    }
-
-    set(state => ({
-      beats: [...state.beats.filter(b => b.chapterId !== chapterId), ...newBeats],
-    }));
-
-    const existingOutline = state.getChapterOutline(chapterId);
-    if (existingOutline) {
-      set(state => ({
-        chapterOutlines: state.chapterOutlines.map(o =>
-          o.id === existingOutline.id
-            ? { ...o, structureType, beats: newBeats, updatedAt: new Date() }
-            : o
-        ),
-      }));
-    } else {
-      const newOutline: ChapterOutline = {
-        id: `outline-${Date.now()}`,
-        chapterId,
-        projectId: chapter.projectId,
-        structureType,
-        beats: newBeats,
-        summary: '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
-    }
-  },
-
-  updateOutlineSummary: async (chapterId: string, summary: string) => {
-    const state = get();
-    const existingOutline = state.getChapterOutline(chapterId);
-    if (existingOutline) {
-      set(state => ({
-        chapterOutlines: state.chapterOutlines.map(o =>
-          o.id === existingOutline.id ? { ...o, summary, updatedAt: new Date() } : o
-        ),
-      }));
-    } else {
-      const chapter = state.chapters.find(c => c.id === chapterId);
-      if (chapter) {
-        const newOutline: ChapterOutline = {
-          id: `outline-${Date.now()}`,
-          chapterId,
-          projectId: chapter.projectId,
-          structureType: 'custom',
-          beats: [],
-          summary,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        set(state => ({ chapterOutlines: [...state.chapterOutlines, newOutline] }));
-      }
-    }
-  },
-
-  updateBeatEmotionCurve: async (beatId: string, emotionCurve: EmotionPoint[]) => {
-    set(state => ({
-      beats: state.beats.map(b =>
-        b.id === beatId ? { ...b, emotionCurve, updatedAt: new Date() } : b
-      ),
-    }));
-  },
-
   loadChapterBranches: async (chapterId: string) => {
     try {
       const branches = reviveDates(await api.branches.list(chapterId));
-      set(state => ({
-        chapterBranches: [
-          ...state.chapterBranches.filter(b => b.chapterId !== chapterId),
-          ...branches,
-        ],
-      }));
+      set(state => {
+        const otherBranches = state.chapterBranches.filter(b => b.chapterId !== chapterId);
+        return { chapterBranches: [...otherBranches, ...branches] };
+      });
     } catch (e) {
       console.error('Failed to load chapter branches:', e);
     }
   },
 
-  getChapterBranches: (chapterId: string): ChapterBranch[] => {
-    return get().chapterBranches
-      .filter(b => b.chapterId === chapterId)
-      .sort((a, b) => {
-        if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      });
+  getChapterBranches: (chapterId: string) => {
+    return get().chapterBranches.filter(b => b.chapterId === chapterId);
   },
 
-  getMainBranch: (chapterId: string): ChapterBranch | null => {
+  getMainBranch: (chapterId: string) => {
     return get().chapterBranches.find(b => b.chapterId === chapterId && b.isMain) || null;
   },
 
-  createBranch: async (chapterId: string, data: {
-    name: string;
-    description?: string;
-    parentBranchId?: string;
-    baseVersionId?: string;
-    color?: string;
-  }): Promise<ChapterBranch> => {
-    const state = get();
-    const branch = reviveDates(await api.branches.create(chapterId, {
-      ...data,
-      creatorId: state.currentUser.id,
-    }));
-    set(st => ({ chapterBranches: [...st.chapterBranches, branch] }));
+  getCurrentBranch: () => {
+    const { currentBranchId, chapterBranches, currentChapter } = get();
+    if (!currentBranchId || !currentChapter) return null;
+    const branch = chapterBranches.find(b => b.id === currentBranchId);
+    if (!branch || branch.chapterId !== currentChapter.id) return null;
     return branch;
   },
 
-  updateBranch: async (branchId: string, updates: Partial<ChapterBranch>) => {
+  setCurrentBranch: (branchId: string) => {
+    set({ currentBranchId: branchId });
+    const branch = get().chapterBranches.find(b => b.id === branchId);
+    if (branch) {
+      const chapter = get().chapters.find(c => c.id === branch.chapterId);
+      if (chapter) {
+        const updatedChapter = {
+          ...chapter,
+          content: branch.currentContent,
+          wordCount: branch.wordCount,
+        };
+        set(state => ({
+          chapters: state.chapters.map(c => c.id === chapter.id ? updatedChapter : c),
+          currentChapter: updatedChapter,
+        }));
+      }
+    }
+  },
+
+  createBranch: async (chapterId, data) => {
+    const branch = reviveDates(await api.branches.create(chapterId, data));
+    set(state => ({ chapterBranches: [...state.chapterBranches, branch] }));
+    return branch;
+  },
+
+  updateBranch: async (branchId, updates) => {
     try {
       const updated = reviveDates(await api.branches.update(branchId, updates));
       set(state => ({
@@ -991,99 +738,92 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  deleteBranch: async (branchId: string) => {
+  deleteBranch: async (branchId) => {
     try {
       await api.branches.delete(branchId);
       set(state => ({
         chapterBranches: state.chapterBranches.filter(b => b.id !== branchId),
-        branchVersions: state.branchVersions.filter(v => v.branchId !== branchId),
       }));
     } catch (e) {
       console.error('Failed to delete branch:', e);
     }
   },
 
-  loadBranchVersions: async (branchId: string) => {
+  loadBranchVersions: async (branchId) => {
     try {
-      const versions = reviveDates(await api.branches.listVersions(branchId));
-      set(state => ({
-        branchVersions: [
-          ...state.branchVersions.filter(v => v.branchId !== branchId),
-          ...versions,
-        ],
-      }));
+      const versions = reviveDates(await api.branches.versions(branchId));
+      set(state => {
+        const otherVersions = state.branchVersions.filter(v => v.branchId !== branchId);
+        return { branchVersions: [...otherVersions, ...versions] };
+      });
     } catch (e) {
       console.error('Failed to load branch versions:', e);
     }
   },
 
-  getBranchVersions: (branchId: string): BranchVersion[] => {
+  getBranchVersions: (branchId) => {
     return get().branchVersions
       .filter(v => v.branchId === branchId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  createBranchVersion: async (branchId: string, content: string, summary: string) => {
-    const state = get();
+  createBranchVersion: async (branchId, content, summary) => {
     try {
-      const version = reviveDates(await api.branches.createVersion(branchId, {
-        content,
-        authorId: state.currentUser.id,
-        changeSummary: summary,
-      }));
-      const updatedBranch = reviveDates(await api.branches.get(branchId));
-      set(st => ({
-        branchVersions: [...st.branchVersions, version],
-        chapterBranches: st.chapterBranches.map(b => b.id === branchId ? updatedBranch : b),
-      }));
+      const version = reviveDates(await api.branches.createVersion(branchId, { content, summary }));
+      set(state => ({ branchVersions: [...state.branchVersions, version] }));
+
+      const branch = get().chapterBranches.find(b => b.id === branchId);
+      if (branch) {
+        const updatedBranch = {
+          ...branch,
+          currentContent: content,
+          wordCount: version.wordCount,
+          updatedAt: version.createdAt,
+        };
+        set(state => ({
+          chapterBranches: state.chapterBranches.map(b => b.id === branchId ? updatedBranch : b),
+        }));
+
+        if (branch.isMain) {
+          const chapter = get().chapters.find(c => c.id === branch.chapterId);
+          if (chapter) {
+            const updatedChapter = {
+              ...chapter,
+              content,
+              wordCount: version.wordCount,
+              updatedAt: version.createdAt,
+            };
+            set(state => ({
+              chapters: state.chapters.map(c => c.id === chapter.id ? updatedChapter : c),
+              currentChapter: updatedChapter,
+            }));
+          }
+        }
+      }
     } catch (e) {
       console.error('Failed to create branch version:', e);
     }
   },
 
-  mergeBranch: async (
-    sourceBranchId: string,
-    targetBranchId: string,
-    resolutions?: Record<string, string>
-  ): Promise<MergeResult> => {
-    const result = reviveDates(await api.branches.merge(sourceBranchId, {
-      targetBranchId,
-      resolutions,
-    }));
+  mergeBranch: async (sourceBranchId, targetBranchId, resolutions) => {
+    const result = reviveDates(await api.branches.merge(sourceBranchId, targetBranchId, resolutions));
     if (result.success) {
-      const state = get();
-      const sourceBranch = state.chapterBranches.find(b => b.id === sourceBranchId);
-      const targetBranch = state.chapterBranches.find(b => b.id === targetBranchId);
-      if (sourceBranch && targetBranch && result.mergedContent) {
-        set(st => ({
-          chapterBranches: st.chapterBranches.map(b => {
-            if (b.id === sourceBranchId) {
-              return { ...b, status: 'merged', mergedAt: new Date(), updatedAt: new Date() };
-            }
-            if (b.id === targetBranchId) {
-              return {
-                ...b,
-                currentContent: result.mergedContent!,
-                wordCount: result.mergedContent!.replace(/\s/g, '').length,
-                updatedAt: new Date(),
-              };
-            }
-            return b;
-          }),
-        }));
-        if (targetBranch.chapterId) {
-          const chapterId = targetBranch.chapterId;
-          const chapter = state.chapters.find(c => c.id === chapterId);
-          if (chapter && targetBranch.isMain) {
-            set(st => ({
-              chapters: st.chapters.map(c =>
-                c.id === chapterId
-                  ? { ...c, content: result.mergedContent!, wordCount: result.mergedContent!.replace(/\s/g, '').length, updatedAt: new Date() }
-                  : c
-              ),
-              currentChapter: st.currentChapter?.id === chapterId
-                ? { ...st.currentChapter, content: result.mergedContent!, wordCount: result.mergedContent!.replace(/\s/g, '').length, updatedAt: new Date() }
-                : st.currentChapter,
+      const { chapterBranches, loadChapterBranches, chapters } = get();
+      const targetBranch = chapterBranches.find(b => b.id === targetBranchId);
+      if (targetBranch) {
+        await loadChapterBranches(targetBranch.chapterId);
+        if (targetBranch.isMain) {
+          const chapter = chapters.find(c => c.id === targetBranch.chapterId);
+          if (chapter && result.mergedContent) {
+            const updatedChapter = {
+              ...chapter,
+              content: result.mergedContent,
+              wordCount: result.mergedContent.replace(/\s/g, '').length,
+              updatedAt: new Date(),
+            };
+            set(state => ({
+              chapters: state.chapters.map(c => c.id === chapter.id ? updatedChapter : c),
+              currentChapter: updatedChapter,
             }));
           }
         }
@@ -1092,7 +832,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return result;
   },
 
-  getBranchDiff: async (branchAId: string, branchBId: string) => {
+  getBranchDiff: async (branchAId, branchBId) => {
     return reviveDates(await api.branches.diff(branchAId, branchBId));
   },
 }));
