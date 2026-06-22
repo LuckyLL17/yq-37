@@ -290,3 +290,59 @@ export interface ChapterOutline {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type BranchStatus = 'active' | 'merged' | 'archived';
+
+export interface ChapterBranch {
+  id: string;
+  chapterId: string;
+  name: string;
+  description?: string;
+  parentBranchId?: string;
+  baseVersionId?: string;
+  isMain: boolean;
+  status: BranchStatus;
+  creatorId: string;
+  creator: User;
+  currentContent: string;
+  wordCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  mergedAt?: Date;
+  color: string;
+}
+
+export interface BranchVersion {
+  id: string;
+  branchId: string;
+  content: string;
+  authorId: string;
+  author: User;
+  changeSummary: string;
+  createdAt: Date;
+}
+
+export interface ConflictBlock {
+  id: string;
+  startIndex: number;
+  endIndex: number;
+  baseContent: string;
+  branchContent: string;
+  resolvedContent?: string;
+  resolution: 'pending' | 'keep-base' | 'keep-branch' | 'custom';
+}
+
+export interface MergeResult {
+  success: boolean;
+  hasConflicts: boolean;
+  mergedContent?: string;
+  conflicts?: ConflictBlock[];
+  message?: string;
+}
+
+export interface BranchDiff {
+  branchA: ChapterBranch;
+  branchB: ChapterBranch;
+  diffs: DiffSegment[];
+  wordCountDelta: number;
+}

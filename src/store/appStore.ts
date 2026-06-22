@@ -14,6 +14,9 @@ import type {
   NarrativeStructureType,
   StructureTemplate,
   EmotionPoint,
+  ChapterBranch,
+  BranchVersion,
+  MergeResult,
 } from '@shared/types';
 import { structureTemplates, mockBeats, mockChapterOutlines } from './mockData';
 import { Diff, diff_match_patch } from 'diff-match-patch';
@@ -48,6 +51,8 @@ interface AppState {
   chapters: Chapter[];
   currentChapter: Chapter | null;
   chapterVersions: ChapterVersion[];
+  chapterBranches: ChapterBranch[];
+  branchVersions: BranchVersion[];
   characters: Character[];
   plotPoints: PlotPoint[];
   conflictWarnings: ConflictWarning[];
@@ -102,6 +107,24 @@ interface AppState {
   applyStructureTemplate: (chapterId: string, structureType: NarrativeStructureType) => Promise<void>;
   updateOutlineSummary: (chapterId: string, summary: string) => Promise<void>;
   updateBeatEmotionCurve: (beatId: string, emotionCurve: EmotionPoint[]) => Promise<void>;
+
+  loadChapterBranches: (chapterId: string) => Promise<void>;
+  getChapterBranches: (chapterId: string) => ChapterBranch[];
+  getMainBranch: (chapterId: string) => ChapterBranch | null;
+  createBranch: (chapterId: string, data: {
+    name: string;
+    description?: string;
+    parentBranchId?: string;
+    baseVersionId?: string;
+    color?: string;
+  }) => Promise<ChapterBranch>;
+  updateBranch: (branchId: string, updates: Partial<ChapterBranch>) => Promise<void>;
+  deleteBranch: (branchId: string) => Promise<void>;
+  loadBranchVersions: (branchId: string) => Promise<void>;
+  getBranchVersions: (branchId: string) => BranchVersion[];
+  createBranchVersion: (branchId: string, content: string, summary: string) => Promise<void>;
+  mergeBranch: (sourceBranchId: string, targetBranchId: string, resolutions?: Record<string, string>) => Promise<MergeResult>;
+  getBranchDiff: (branchAId: string, branchBId: string) => Promise<any>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -118,6 +141,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   chapters: [],
   currentChapter: null,
   chapterVersions: [],
+  chapterBranches: [],
+  branchVersions: [],
   characters: [],
   plotPoints: [],
   conflictWarnings: [],
@@ -147,11 +172,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         allChapterIds.slice(0, 10).map(id => api.versions.list(id).catch(() => []))
       ).then(arrs => arrs.flat());
 
+      const branches = await Promise.all(
+        allChapterIds.slice(0, 10).map(id => api.branches.list(id).catch(() => []))
+      ).then(arrs => arrs.flat());
+
+      const allBranchIds = branches.map((b: any) => b.id);
+      const branchVers = await Promise.all(
+        allBranchIds.slice(0, 20).map(id => api.branches.listVersions(id).catch(() => []))
+      ).then(arrs => arrs.flat());
+
       set({
         users: reviveDates(users),
         projects: reviveDates(projects),
         chapters: reviveDates(chapters),
         chapterVersions: reviveDates(versions),
+        chapterBranches: reviveDates(branches),
+        branchVersions: reviveDates(branchVers),
         characters: reviveDates(characters),
         plotPoints: reviveDates(plotPoints),
         stickyNotes: reviveDates(stickyNotes),
@@ -899,5 +935,164 @@ export const useAppStore = create<AppState>((set, get) => ({
         b.id === beatId ? { ...b, emotionCurve, updatedAt: new Date() } : b
       ),
     }));
+  },
+
+  loadChapterBranches: async (chapterId: string) => {
+    try {
+      const branches = reviveDates(await api.branches.list(chapterId));
+      set(state => ({
+        chapterBranches: [
+          ...state.chapterBranches.filter(b => b.chapterId !== chapterId),
+          ...branches,
+        ],
+      }));
+    } catch (e) {
+      console.error('Failed to load chapter branches:', e);
+    }
+  },
+
+  getChapterBranches: (chapterId: string): ChapterBranch[] => {
+    return get().chapterBranches
+      .filter(b => b.chapterId === chapterId)
+      .sort((a, b) => {
+        if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+  },
+
+  getMainBranch: (chapterId: string): ChapterBranch | null => {
+    return get().chapterBranches.find(b => b.chapterId === chapterId && b.isMain) || null;
+  },
+
+  createBranch: async (chapterId: string, data: {
+    name: string;
+    description?: string;
+    parentBranchId?: string;
+    baseVersionId?: string;
+    color?: string;
+  }): Promise<ChapterBranch> => {
+    const state = get();
+    const branch = reviveDates(await api.branches.create(chapterId, {
+      ...data,
+      creatorId: state.currentUser.id,
+    }));
+    set(st => ({ chapterBranches: [...st.chapterBranches, branch] }));
+    return branch;
+  },
+
+  updateBranch: async (branchId: string, updates: Partial<ChapterBranch>) => {
+    try {
+      const updated = reviveDates(await api.branches.update(branchId, updates));
+      set(state => ({
+        chapterBranches: state.chapterBranches.map(b => b.id === branchId ? updated : b),
+      }));
+    } catch (e) {
+      console.error('Failed to update branch:', e);
+    }
+  },
+
+  deleteBranch: async (branchId: string) => {
+    try {
+      await api.branches.delete(branchId);
+      set(state => ({
+        chapterBranches: state.chapterBranches.filter(b => b.id !== branchId),
+        branchVersions: state.branchVersions.filter(v => v.branchId !== branchId),
+      }));
+    } catch (e) {
+      console.error('Failed to delete branch:', e);
+    }
+  },
+
+  loadBranchVersions: async (branchId: string) => {
+    try {
+      const versions = reviveDates(await api.branches.listVersions(branchId));
+      set(state => ({
+        branchVersions: [
+          ...state.branchVersions.filter(v => v.branchId !== branchId),
+          ...versions,
+        ],
+      }));
+    } catch (e) {
+      console.error('Failed to load branch versions:', e);
+    }
+  },
+
+  getBranchVersions: (branchId: string): BranchVersion[] => {
+    return get().branchVersions
+      .filter(v => v.branchId === branchId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+
+  createBranchVersion: async (branchId: string, content: string, summary: string) => {
+    const state = get();
+    try {
+      const version = reviveDates(await api.branches.createVersion(branchId, {
+        content,
+        authorId: state.currentUser.id,
+        changeSummary: summary,
+      }));
+      const updatedBranch = reviveDates(await api.branches.get(branchId));
+      set(st => ({
+        branchVersions: [...st.branchVersions, version],
+        chapterBranches: st.chapterBranches.map(b => b.id === branchId ? updatedBranch : b),
+      }));
+    } catch (e) {
+      console.error('Failed to create branch version:', e);
+    }
+  },
+
+  mergeBranch: async (
+    sourceBranchId: string,
+    targetBranchId: string,
+    resolutions?: Record<string, string>
+  ): Promise<MergeResult> => {
+    const result = reviveDates(await api.branches.merge(sourceBranchId, {
+      targetBranchId,
+      resolutions,
+    }));
+    if (result.success) {
+      const state = get();
+      const sourceBranch = state.chapterBranches.find(b => b.id === sourceBranchId);
+      const targetBranch = state.chapterBranches.find(b => b.id === targetBranchId);
+      if (sourceBranch && targetBranch && result.mergedContent) {
+        set(st => ({
+          chapterBranches: st.chapterBranches.map(b => {
+            if (b.id === sourceBranchId) {
+              return { ...b, status: 'merged', mergedAt: new Date(), updatedAt: new Date() };
+            }
+            if (b.id === targetBranchId) {
+              return {
+                ...b,
+                currentContent: result.mergedContent!,
+                wordCount: result.mergedContent!.replace(/\s/g, '').length,
+                updatedAt: new Date(),
+              };
+            }
+            return b;
+          }),
+        }));
+        if (targetBranch.chapterId) {
+          const chapterId = targetBranch.chapterId;
+          const chapter = state.chapters.find(c => c.id === chapterId);
+          if (chapter && targetBranch.isMain) {
+            set(st => ({
+              chapters: st.chapters.map(c =>
+                c.id === chapterId
+                  ? { ...c, content: result.mergedContent!, wordCount: result.mergedContent!.replace(/\s/g, '').length, updatedAt: new Date() }
+                  : c
+              ),
+              currentChapter: st.currentChapter?.id === chapterId
+                ? { ...st.currentChapter, content: result.mergedContent!, wordCount: result.mergedContent!.replace(/\s/g, '').length, updatedAt: new Date() }
+                : st.currentChapter,
+            }));
+          }
+        }
+      }
+    }
+    return result;
+  },
+
+  getBranchDiff: async (branchAId: string, branchBId: string) => {
+    return reviveDates(await api.branches.diff(branchAId, branchBId));
   },
 }));

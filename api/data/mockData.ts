@@ -8,6 +8,8 @@ import type {
   PlotPoint,
   ConflictWarning,
   StickyNote,
+  ChapterBranch,
+  BranchVersion,
 } from '../../shared/types.js';
 
 export const mockUsers: User[] = [
@@ -899,5 +901,184 @@ export const mockStickyNotes: StickyNote[] = [
     rotation: 2,
     createdAt: new Date('2026-06-10'),
     updatedAt: new Date('2026-06-15'),
+  },
+];
+
+export const mockChapterBranches: ChapterBranch[] = [
+  {
+    id: 'branch-ch1-main',
+    chapterId: 'chapter-1',
+    name: '主线',
+    description: '第一章的主线分支，代表正式发布的内容',
+    isMain: true,
+    status: 'active',
+    creatorId: 'user-1',
+    creator: mockUsers[0],
+    currentContent: mockChapters[0].content,
+    wordCount: 587,
+    createdAt: new Date('2025-06-10'),
+    updatedAt: new Date('2026-06-12'),
+    color: '#627d98',
+  },
+  {
+    id: 'branch-ch1-experiment-1',
+    chapterId: 'chapter-1',
+    name: '实验分支：悬疑氛围强化',
+    description: '尝试增强启航前的悬疑氛围，增加林远对未知的不安感',
+    parentBranchId: 'branch-ch1-main',
+    baseVersionId: 'version-1-3',
+    isMain: false,
+    status: 'active',
+    creatorId: 'user-2',
+    creator: mockUsers[1],
+    currentContent: `公元2157年，地球轨道。
+
+"星辰号"静静停泊在联合太空站的三号船坞，这艘长达三公里的星际殖民舰是人类有史以来建造的最伟大的工程奇迹。它承载着十万名精选的殖民者，以及人类文明延续的全部希望。
+
+林远站在观景窗前，望着那颗蓝色的星球，心中百感交集。作为"星辰号"的首席天文官，他知道这一去，便是永别。
+
+但今晚，他总觉得有些不对劲。星空中仿佛有什么东西在注视着他们，那种被窥探的感觉让他脊背发凉。
+
+"在想什么？"身后传来熟悉的声音。
+
+林远没有回头，轻声说道："在想我们这一走，地球上的人会怎么看我们。是勇士，还是逃兵？"
+
+苏婉走到他身边，和他并肩而立。这位"星辰号"的医疗主管有着一双温柔却坚定的眼睛。
+
+"历史会给出答案的，"她轻轻说，"而我们的使命，是让人类这个名字，不再局限于这颗星球。"
+
+林远想说些什么，但那种不安的感觉越来越强烈。他望向深空，仿佛在无尽的黑暗中，有一双眼睛正在回望。
+
+通讯器突然响起，舰长的声音传遍全舰："所有人员请注意，启航倒计时十分钟。请各部门做好最终检查。"
+
+林远深深吸了一口气，握住了苏婉的手。
+
+"走吧，"他说，"该去创造历史了。"
+
+随着倒计时的结束，"星辰号"的引擎发出低沉的轰鸣。在亿万地球人的注视下，这艘承载着人类未来的巨舰，缓缓驶向了那片无垠的星海。
+
+前方，是未知；身后，是故乡。
+
+而属于他们的传奇，才刚刚开始。`,
+    wordCount: 702,
+    createdAt: new Date('2026-06-13'),
+    updatedAt: new Date('2026-06-15'),
+    color: '#d4af37',
+  },
+  {
+    id: 'branch-ch1-experiment-2',
+    chapterId: 'chapter-1',
+    name: '实验分支：苏婉视角',
+    description: '尝试从苏婉的视角重写开场，展现她内心的担忧与坚强',
+    parentBranchId: 'branch-ch1-main',
+    baseVersionId: 'version-1-3',
+    isMain: false,
+    status: 'active',
+    creatorId: 'user-3',
+    creator: mockUsers[2],
+    currentContent: `公元2157年，地球轨道。
+
+苏婉站在"星辰号"的医疗舱里，最后检查了一遍冷冻休眠设备的参数。作为这艘星际殖民舰的医疗主管，她肩负着十万殖民者的健康安全。
+
+一切正常。但她的心，却无法平静。
+
+她走到观景窗前，望着那颗蓝色的星球。这是她最后一次以"地球人"的身份看它了。
+
+身后传来脚步声，她不用回头也知道是谁。
+
+"在想什么？"林远的声音在身后响起。
+
+苏婉没有回答，只是望着那颗星球，轻声说："在想我爸。他当年也是宇航员，可惜，他没能走这么远。"
+
+林远走到她身边，和她并肩而立。
+
+"他会为你骄傲的。"
+
+"也许吧，"苏婉轻轻笑了笑，"但我更希望他能活着看到这一天。"
+
+她的目光越过地球，望向那片无垠的深空。那里有未知，有危险，也有人类的希望。
+
+作为医疗主管，她比任何人都清楚这次航行的风险——辐射、疾病、心理问题、未知的外星环境……任何一个都可能致命。
+
+但她还是来了。因为她相信，人类值得一个更广阔的未来。
+
+通讯器突然响起，舰长的声音传遍全舰："所有人员请注意，启航倒计时十分钟。请各部门做好最终检查。"
+
+苏婉深吸一口气，握住了林远的手。
+
+"走吧，"她说，"该去创造历史了。"
+
+随着倒计时的结束，"星辰号"的引擎发出低沉的轰鸣。在亿万地球人的注视下，这艘承载着人类未来的巨舰，缓缓驶向了那片无垠的星海。
+
+前方，是未知；身后，是故乡。
+
+而属于他们的传奇，才刚刚开始。`,
+    wordCount: 623,
+    createdAt: new Date('2026-06-14'),
+    updatedAt: new Date('2026-06-15'),
+    color: '#7c3aed',
+  },
+  {
+    id: 'branch-ch2-main',
+    chapterId: 'chapter-2',
+    name: '主线',
+    description: '第二章的主线分支',
+    isMain: true,
+    status: 'active',
+    creatorId: 'user-1',
+    creator: mockUsers[0],
+    currentContent: mockChapters[1].content,
+    wordCount: 723,
+    createdAt: new Date('2025-07-15'),
+    updatedAt: new Date('2026-06-14'),
+    color: '#627d98',
+  },
+  {
+    id: 'branch-ch2-merged-1',
+    chapterId: 'chapter-2',
+    name: '已合并：增加苏婉的医学视角',
+    description: '在信号分析场景中加入苏婉从医学角度的分析，已合并入主线',
+    parentBranchId: 'branch-ch2-main',
+    baseVersionId: 'version-2-2',
+    isMain: false,
+    status: 'merged',
+    creatorId: 'user-2',
+    creator: mockUsers[1],
+    currentContent: mockChapters[1].content,
+    wordCount: 723,
+    createdAt: new Date('2026-06-10'),
+    updatedAt: new Date('2026-06-12'),
+    mergedAt: new Date('2026-06-12'),
+    color: '#22c55e',
+  },
+];
+
+export const mockBranchVersions: BranchVersion[] = [
+  {
+    id: 'branch-ver-1-1',
+    branchId: 'branch-ch1-experiment-1',
+    content: mockChapterBranches[1].currentContent,
+    authorId: 'user-2',
+    author: mockUsers[1],
+    changeSummary: '创建悬疑分支初稿，增加被注视的感觉描写',
+    createdAt: new Date('2026-06-13T10:00:00'),
+  },
+  {
+    id: 'branch-ver-1-2',
+    branchId: 'branch-ch1-experiment-1',
+    content: mockChapterBranches[1].currentContent,
+    authorId: 'user-2',
+    author: mockUsers[1],
+    changeSummary: '调整心理描写的节奏，让悬疑感更自然',
+    createdAt: new Date('2026-06-15T14:30:00'),
+  },
+  {
+    id: 'branch-ver-2-1',
+    branchId: 'branch-ch1-experiment-2',
+    content: mockChapterBranches[2].currentContent,
+    authorId: 'user-3',
+    author: mockUsers[2],
+    changeSummary: '从苏婉视角重写开场，加入她父亲的背景故事',
+    createdAt: new Date('2026-06-14T09:15:00'),
   },
 ];

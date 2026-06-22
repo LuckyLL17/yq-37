@@ -9,8 +9,19 @@ import {
   mockPlotPoints,
   mockConflictWarnings,
   mockStickyNotes,
+  mockChapterBranches,
+  mockBranchVersions,
 } from '../data/mockData.js';
-import type { PdfExportConfig, ConflictWarning, StickyNote, DashboardData } from '../../shared/types.js';
+import type {
+  PdfExportConfig,
+  ConflictWarning,
+  StickyNote,
+  DashboardData,
+  ChapterBranch,
+  BranchVersion,
+  ConflictBlock,
+  BranchStatus,
+} from '../../shared/types.js';
 import { diff_match_patch } from 'diff-match-patch';
 import { jsPDF } from 'jspdf';
 
@@ -251,6 +262,303 @@ router.get('/versions/diff', (req: Request, res: Response) => {
   }
   const diff = dmp.diff_main(oldContent, newContent);
   res.json(diff);
+});
+
+// ==================== Branches ====================
+
+router.get('/chapters/:id/branches', (req: Request, res: Response) => {
+  const branches = mockChapterBranches
+    .filter(b => b.chapterId === req.params.id)
+    .sort((a, b) => {
+      if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+  res.json(branches);
+});
+
+router.get('/branches/:id', (req: Request, res: Response) => {
+  const branch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+  res.json(branch);
+});
+
+router.post('/chapters/:id/branches', (req: Request, res: Response) => {
+  const { name, description, parentBranchId, baseVersionId, creatorId, color } = req.body;
+  const chapter = mockChapters.find(c => c.id === req.params.id);
+  if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
+  const creator = mockUsers.find(u => u.id === creatorId);
+
+  let baseContent = chapter.content;
+  if (parentBranchId) {
+    const parentBranch = mockChapterBranches.find(b => b.id === parentBranchId);
+    if (parentBranch) {
+      baseContent = parentBranch.currentContent;
+    }
+  } else if (baseVersionId) {
+    const baseVersion = mockChapterVersions.find(v => v.id === baseVersionId);
+    if (baseVersion) {
+      baseContent = baseVersion.content;
+    }
+  }
+
+  const branchColors = ['#d4af37', '#7c3aed', '#059669', '#dc2626', '#2563eb', '#ea580c', '#0891b2'];
+  const usedColors = mockChapterBranches
+    .filter(b => b.chapterId === req.params.id && !b.isMain)
+    .map(b => b.color);
+  const availableColors = branchColors.filter(c => !usedColors.includes(c));
+  const finalColor = color || availableColors[0] || branchColors[Math.floor(Math.random() * branchColors.length)];
+
+  const newBranch: ChapterBranch = {
+    id: `branch-${Date.now()}`,
+    chapterId: req.params.id,
+    name: name || '新实验分支',
+    description: description || '',
+    ...(parentBranchId && { parentBranchId }),
+    ...(baseVersionId && { baseVersionId }),
+    isMain: false,
+    status: 'active',
+    creatorId,
+    creator: creator!,
+    currentContent: baseContent,
+    wordCount: baseContent.replace(/\s/g, '').length,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    color: finalColor,
+  };
+  mockChapterBranches.push(newBranch);
+  res.status(201).json(newBranch);
+});
+
+router.put('/branches/:id', (req: Request, res: Response) => {
+  const { name, description, currentContent, status } = req.body;
+  const index = mockChapterBranches.findIndex(b => b.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Branch not found' });
+
+  const branch = mockChapterBranches[index];
+  if (branch.isMain && status === 'archived') {
+    return res.status(400).json({ error: 'Cannot archive main branch' });
+  }
+
+  mockChapterBranches[index] = {
+    ...branch,
+    ...(name !== undefined && { name }),
+    ...(description !== undefined && { description }),
+    ...(currentContent !== undefined && {
+      currentContent,
+      wordCount: currentContent.replace(/\s/g, '').length,
+    }),
+    ...(status !== undefined && {
+      status: status as BranchStatus,
+      ...(status === 'merged' && { mergedAt: new Date() }),
+    }),
+    updatedAt: new Date(),
+  };
+  res.json(mockChapterBranches[index]);
+});
+
+router.delete('/branches/:id', (req: Request, res: Response) => {
+  const index = mockChapterBranches.findIndex(b => b.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Branch not found' });
+  if (mockChapterBranches[index].isMain) {
+    return res.status(400).json({ error: 'Cannot delete main branch' });
+  }
+
+  const branchId = req.params.id;
+  mockChapterBranches.splice(index, 1);
+
+  for (let i = mockBranchVersions.length - 1; i >= 0; i--) {
+    if (mockBranchVersions[i].branchId === branchId) {
+      mockBranchVersions.splice(i, 1);
+    }
+  }
+
+  res.json({ success: true });
+});
+
+router.get('/branches/:id/versions', (req: Request, res: Response) => {
+  const versions = mockBranchVersions
+    .filter(v => v.branchId === req.params.id)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  res.json(versions);
+});
+
+router.post('/branches/:id/versions', (req: Request, res: Response) => {
+  const { content, authorId, changeSummary } = req.body;
+  const branch = mockChapterBranches.find(b => b.id === req.params.id);
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+  const author = mockUsers.find(u => u.id === authorId);
+
+  const newVersion: BranchVersion = {
+    id: `branch-ver-${Date.now()}`,
+    branchId: req.params.id,
+    content,
+    authorId,
+    author: author!,
+    changeSummary: changeSummary || '更新内容',
+    createdAt: new Date(),
+  };
+  mockBranchVersions.push(newVersion);
+
+  const branchIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
+  if (branchIndex !== -1) {
+    mockChapterBranches[branchIndex] = {
+      ...mockChapterBranches[branchIndex],
+      currentContent: content,
+      wordCount: content.replace(/\s/g, '').length,
+      updatedAt: new Date(),
+    };
+  }
+
+  res.status(201).json(newVersion);
+});
+
+router.post('/branches/:id/merge', (req: Request, res: Response) => {
+  const { targetBranchId, resolutions, customMergedContent } = req.body;
+  const sourceBranch = mockChapterBranches.find(b => b.id === req.params.id);
+  const targetBranch = mockChapterBranches.find(b => b.id === targetBranchId);
+
+  if (!sourceBranch) return res.status(404).json({ error: 'Source branch not found' });
+  if (!targetBranch) return res.status(404).json({ error: 'Target branch not found' });
+  if (targetBranch.status !== 'active') {
+    return res.status(400).json({ error: 'Target branch is not active' });
+  }
+
+  if (customMergedContent) {
+    const targetIndex = mockChapterBranches.findIndex(b => b.id === targetBranchId);
+    if (targetIndex !== -1) {
+      mockChapterBranches[targetIndex] = {
+        ...mockChapterBranches[targetIndex],
+        currentContent: customMergedContent,
+        wordCount: customMergedContent.replace(/\s/g, '').length,
+        updatedAt: new Date(),
+      };
+    }
+    const sourceIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
+    if (sourceIndex !== -1) {
+      mockChapterBranches[sourceIndex] = {
+        ...mockChapterBranches[sourceIndex],
+        status: 'merged',
+        mergedAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+    res.json({ success: true, hasConflicts: false, mergedContent: customMergedContent });
+    return;
+  }
+
+  const diffResult = dmp.diff_main(targetBranch.currentContent, sourceBranch.currentContent);
+  dmp.diff_cleanupSemantic(diffResult);
+
+  const conflicts: ConflictBlock[] = [];
+  let mergedContent = '';
+  let hasConflicts = false;
+  let conflictIndex = 0;
+
+  const sourceLines = sourceBranch.currentContent.split('\n');
+  const targetLines = targetBranch.currentContent.split('\n');
+  const minLines = Math.min(sourceLines.length, targetLines.length);
+
+  for (let i = 0; i < minLines; i++) {
+    if (sourceLines[i] !== targetLines[i]) {
+      hasConflicts = true;
+      const conflict: ConflictBlock = {
+        id: `conflict-${conflictIndex++}`,
+        startIndex: i,
+        endIndex: i,
+        baseContent: targetLines[i],
+        branchContent: sourceLines[i],
+        resolution: 'pending',
+      };
+      conflicts.push(conflict);
+
+      if (resolutions && resolutions[conflict.id]) {
+        const resolution = resolutions[conflict.id];
+        if (resolution === 'keep-base') {
+          mergedContent += targetLines[i] + '\n';
+          conflict.resolvedContent = targetLines[i];
+          conflict.resolution = 'keep-base';
+        } else if (resolution === 'keep-branch') {
+          mergedContent += sourceLines[i] + '\n';
+          conflict.resolvedContent = sourceLines[i];
+          conflict.resolution = 'keep-branch';
+        } else if (typeof resolution === 'string') {
+          mergedContent += resolution + '\n';
+          conflict.resolvedContent = resolution;
+          conflict.resolution = 'custom';
+        }
+      } else {
+        mergedContent += `<<<<<<< 主线\n${targetLines[i]}\n=======\n${sourceLines[i]}\n>>>>>>> 实验分支\n`;
+      }
+    } else {
+      mergedContent += sourceLines[i] + '\n';
+    }
+  }
+
+  if (sourceLines.length > minLines) {
+    for (let i = minLines; i < sourceLines.length; i++) {
+      mergedContent += sourceLines[i] + '\n';
+    }
+  } else if (targetLines.length > minLines) {
+    for (let i = minLines; i < targetLines.length; i++) {
+      mergedContent += targetLines[i] + '\n';
+    }
+  }
+
+  if (!hasConflicts || (resolutions && Object.keys(resolutions).length > 0)) {
+    const targetIndex = mockChapterBranches.findIndex(b => b.id === targetBranchId);
+    if (targetIndex !== -1) {
+      mockChapterBranches[targetIndex] = {
+        ...mockChapterBranches[targetIndex],
+        currentContent: mergedContent.trim(),
+        wordCount: mergedContent.trim().replace(/\s/g, '').length,
+        updatedAt: new Date(),
+      };
+    }
+    const sourceIndex = mockChapterBranches.findIndex(b => b.id === req.params.id);
+    if (sourceIndex !== -1) {
+      mockChapterBranches[sourceIndex] = {
+        ...mockChapterBranches[sourceIndex],
+        status: 'merged',
+        mergedAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+    res.json({
+      success: true,
+      hasConflicts: false,
+      mergedContent: mergedContent.trim(),
+    });
+  } else {
+    res.json({
+      success: false,
+      hasConflicts: true,
+      conflicts,
+      message: '存在内容冲突，请手动解决',
+    });
+  }
+});
+
+router.get('/branches/diff', (req: Request, res: Response) => {
+  const { branchAId, branchBId } = req.query;
+  if (typeof branchAId !== 'string' || typeof branchBId !== 'string') {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  const branchA = mockChapterBranches.find(b => b.id === branchAId);
+  const branchB = mockChapterBranches.find(b => b.id === branchBId);
+  if (!branchA || !branchB) return res.status(404).json({ error: 'Branch not found' });
+
+  const diffs = dmp.diff_main(branchA.currentContent, branchB.currentContent);
+  dmp.diff_cleanupSemantic(diffs);
+
+  const wordCountDelta = branchB.wordCount - branchA.wordCount;
+
+  res.json({
+    branchA,
+    branchB,
+    diffs,
+    wordCountDelta,
+  });
 });
 
 // ==================== Characters CRUD ====================
